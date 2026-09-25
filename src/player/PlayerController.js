@@ -122,7 +122,7 @@ export class PlayerController {
     if (!aimStateAlreadyUpdated) this.updateAimState(delta);
     const movement = this.input.getMovement();
     const moving = movement.x !== 0 || movement.z !== 0;
-    this.sprinting = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight');
+    this.sprinting = this.input.isActionDown('sprint');
 
     const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
@@ -139,7 +139,7 @@ export class PlayerController {
     this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, targetVelocity.x, response);
     this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, targetVelocity.z, response);
 
-    if (this.input.wasPressed('Space') && this.grounded) {
+    if (this.input.wasActionPressed('jump') && this.grounded) {
       this.velocity.y = this.config.jumpSpeed;
       this.grounded = false;
       this.audio.play('jump');

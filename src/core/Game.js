@@ -31,13 +31,13 @@ export class Game {
     this.camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.045, 150);
     this.camera.rotation.order = 'YXZ';
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.applyGraphicsQuality(localStorage.getItem('graphicsQuality') || 'high');
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.domElement.id = 'game-canvas';
     this.renderer.domElement.setAttribute('aria-label', 'Poly Strike 3D arena');
     container.querySelector('#viewport').appendChild(this.renderer.domElement);
@@ -130,7 +130,10 @@ export class Game {
       restart: () => this.startMatch(this.difficultyKey, this.currentMapName),
       showMenu: () => this.showMenu(),
       quit: () => this.quit(),
-      setSensitivity: (value) => { this.input.sensitivity = value; },
+      setSensitivity: (value) => this.input.setSensitivity(value),
+      setInvertY: (invert) => this.input.setInvertY(invert),
+      setBinding: (action, code) => this.input.setBinding(action, code),
+      setGraphicsQuality: (val) => this.applyGraphicsQuality(val)
     });
 
     this.input.onEscape = () => {
@@ -366,9 +369,7 @@ export class Game {
     clearTimeout(this.pointerLockTimeout);
     this.pointerLockPending = false;
     this.pointerLockWasActive = false;
-    if (this.state === 'PLAYING' && this.input.enabled && !this.outcome) {
-      this.pause();
-    } else if (this.state === 'PLAYING') {
+    if (this.state === 'PLAYING') {
       this.ui.setCaptureHint(true);
     } else {
       this.ui.setCaptureHint(false);
@@ -471,26 +472,50 @@ export class Game {
   resize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    // Do not override user's pixel ratio setting on resize
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  bindLoop() {
-    let frames = 0;
-    let lastTime = performance.now();
-
-    const frame = () => {
-      const delta = Math.min(this.clock.getDelta(), 0.04);
-      this.elapsed += delta;
-
-      const now = performance.now();
-      frames++;
-      if (now >= lastTime + 1000) {
-        this.ui.setFPS(frames * 1000 / (now - lastTime));
-        frames = 0;
-        lastTime = now;
+  applyGraphicsQuality(quality) {
+    switch(quality) {
+      case 'low':
+        this.renderer.setPixelRatio(0.75);
+        this.renderer.shadowMap.enabled = false;
+        break;
+      case 'medium':
+        this.renderer.setPixelRatio(1.0);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.BasicShadowMap;
+        break;
+      case 'high':
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFShadowMap;
+        break;
+      case 'ultra':
+        this.renderer.setPixelRatio(Math.max(window.devicePixelRatio, 1.5));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        break;
+    }
+    
+    this.scene.traverse((child) => {
+      if (child.isMesh && child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => m.needsUpdate = true);
+        } else {
+          child.material.needsUpdate = true;
+        }
       }
+    });
+  }
 
+  bindLoop() {
+    const frame = () => {
+      const rawDelta = this.clock.getDelta();
+      const delta = Math.min(rawDelta, 0.04);
+      this.elapsed += delta;
+      
       if (this.state === 'MENU' || this.state === 'QUIT') this.updateMenuCamera(delta);
       if (this.state === 'PLAYING') this.updateMatch(delta);
 

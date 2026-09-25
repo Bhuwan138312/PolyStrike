@@ -7,7 +7,18 @@ export class InputManager {
     this.firing = false;
     this.ads = false;
     this.enabled = false;
-    this.sensitivity = 1;
+    const savedSens = localStorage.getItem('sensitivity');
+    this.sensitivity = savedSens !== null ? Number(savedSens) : 1;
+    this.invertY = localStorage.getItem('invertY') === 'true';
+    this.bindings = JSON.parse(localStorage.getItem('bindings')) || {
+      forward: 'KeyW',
+      backward: 'KeyS',
+      left: 'KeyA',
+      right: 'KeyD',
+      jump: 'Space',
+      sprint: 'ShiftLeft',
+      reload: 'KeyR'
+    };
     this.onEscape = null;
     this.onPointerLockChange = null;
     this.onPointerLockError = null;
@@ -72,7 +83,7 @@ export class InputManager {
     const movementY = Number(event.movementY);
     if (!Number.isFinite(movementX) || !Number.isFinite(movementY)) return;
     this.mouseDelta.x += movementX * this.sensitivity;
-    this.mouseDelta.y += movementY * this.sensitivity;
+    this.mouseDelta.y += movementY * this.sensitivity * (this.invertY ? -1 : 1);
   }
 
   handleMouseDown(event) {
@@ -140,10 +151,8 @@ export class InputManager {
   }
 
   getMovement() {
-    const x = Number(this.isDown('KeyD') || this.isDown('ArrowRight'))
-      - Number(this.isDown('KeyA') || this.isDown('ArrowLeft'));
-    const z = Number(this.isDown('KeyW') || this.isDown('ArrowUp'))
-      - Number(this.isDown('KeyS') || this.isDown('ArrowDown'));
+    const x = Number(this.isActionDown('right')) - Number(this.isActionDown('left'));
+    const z = Number(this.isActionDown('forward')) - Number(this.isActionDown('backward'));
     const length = Math.hypot(x, z);
     return length > 1 ? { x: x / length, z: z / length } : { x, z };
   }
@@ -162,6 +171,29 @@ export class InputManager {
   setEnabled(enabled) {
     this.enabled = enabled;
     if (!enabled) this.clear();
+  }
+
+  setBinding(action, code) {
+    this.bindings[action] = code;
+    localStorage.setItem('bindings', JSON.stringify(this.bindings));
+  }
+
+  setInvertY(invert) {
+    this.invertY = invert;
+    localStorage.setItem('invertY', invert);
+  }
+
+  setSensitivity(value) {
+    this.sensitivity = value;
+    localStorage.setItem('sensitivity', value);
+  }
+
+  isActionDown(action) {
+    return this.isDown(this.bindings[action]);
+  }
+
+  wasActionPressed(action) {
+    return this.wasPressed(this.bindings[action]);
   }
 
   clear() {

@@ -481,7 +481,7 @@ button {
   justify-content: space-between;
   margin-bottom: 9px;
   color: #849b9a;
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   letter-spacing: 0.1em;
 }
 
@@ -1160,4 +1160,65 @@ button {
   min-width: 24px;
   text-align: center;
   box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(117, 224, 215, 0.2);
+  padding-bottom: 10px;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: rgba(224, 240, 235, 0.5);
+  font-family: inherit;
+  font-size: 0.9em;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+}
+
+.tab-btn.active {
+  color: var(--cyan);
+}
+
+.tab-content {
+  height: 420px;
+}
+
+.tab-content.is-hidden {
+  display: none;
+}
+
+.graphics-btn {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(117, 224, 215, 0.3);
+  color: rgba(224, 240, 235, 0.7);
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  flex: 1;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.graphics-btn:hover {
+  background: rgba(117, 224, 215, 0.1);
+}
+
+.graphics-btn.active {
+  background: rgba(117, 224, 215, 0.2);
+  border-color: var(--cyan);
+  color: var(--cyan);
+  box-shadow: 0 0 10px rgba(117, 224, 215, 0.2);
+}
+
+.keybind-btn {
+  font-size: 0.95rem;
+  padding: 6px 12px;
 }

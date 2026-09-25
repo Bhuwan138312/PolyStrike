@@ -1,191 +1,227 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#07131d" />
-    <meta name="description" content="POLY STRIKE — a compact arena FPS prototype." />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%2307131d'/%3E%3Cpath d='M14 14h36v9H36v27h-9V23H14z' fill='%2375e0d7'/%3E%3C/svg%3E" />
-    <title>POLY STRIKE</title>
-  </head>
-  <body>
-    <main id="game" aria-label="Poly Strike game">
-      <div id="viewport"></div>
 
-      <div id="hud" class="hud is-hidden" aria-live="polite">
-        <div class="damage-vignette" id="damage-vignette"></div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07131d" />
+  <meta name="description" content="POLY STRIKE — a compact arena FPS prototype." />
+  <link rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%2307131d'/%3E%3Cpath d='M14 14h36v9H36v27h-9V23H14z' fill='%2375e0d7'/%3E%3C/svg%3E" />
+  <title>POLY STRIKE</title>
+</head>
 
-        <div class="hud-top-left">
-          <div class="eyebrow">OPERATIVE STATUS</div>
-          <div class="health-row">
-            <span class="health-icon">+</span>
-            <strong id="health-value">100</strong>
-            <span class="health-unit">HP</span>
+<body>
+  <main id="game" aria-label="Poly Strike game">
+    <div id="viewport"></div>
+
+    <div id="hud" class="hud is-hidden" aria-live="polite">
+      <div class="damage-vignette" id="damage-vignette"></div>
+
+      <div class="hud-top-left">
+        <div class="eyebrow">OPERATIVE STATUS</div>
+        <div class="health-row">
+          <span class="health-icon">+</span>
+          <strong id="health-value">100</strong>
+          <span class="health-unit">HP</span>
+        </div>
+        <div class="health-track"><i id="health-fill"></i></div>
+        <div class="weapon-outlines">
+          <div id="weapon-outline-0" class="weapon-icon active">
+            <img src="/assaultrifle-outline.png" alt="Rifle">
           </div>
-          <div class="health-track"><i id="health-fill"></i></div>
-          <div class="weapon-outlines">
-            <div id="weapon-outline-0" class="weapon-icon active">
-              <img src="/assaultrifle-outline.png" alt="Rifle">
-            </div>
-            <div id="weapon-outline-1" class="weapon-icon">
-              <img src="/pistol-outline.png" alt="Pistol">
-            </div>
-          </div>
-        </div>
-
-        <div class="hud-top-center">
-          <div class="objective-chip">
-            <span class="pulse-dot"></span>
-            <span>HOSTILES</span>
-            <strong id="enemies-value">0</strong>
-          </div>
-          <div id="threat-callout" class="threat-callout"></div>
-        </div>
-
-        <div class="hud-bottom-left">
-          <div id="weapon-name" class="weapon-name">M416</div>
-          <div id="move-state" class="move-state">READY</div>
-        </div>
-
-        <div class="hud-bottom-right">
-          <div class="ammo-label">30<span>/ 120</span></div>
-          <div class="ammo-state"><i id="reload-fill"></i></div>
-          <div class="reload-copy" id="reload-copy">R&nbsp;&nbsp;RELOAD</div>
-        </div>
-
-        <div id="controls-overlay" class="controls-overlay">
-          <div class="controls-list">
-            <div><kbd>WASD</kbd><span>MOVE</span></div>
-            <div><kbd>MOUSE</kbd><span>AIM</span></div>
-            <div><kbd>LMB</kbd><span>FIRE</span></div>
-            <div><kbd>RMB</kbd><span>ADS</span></div>
-            <div><kbd>R</kbd><span>RELOAD</span></div>
-            <div><kbd>SPACE</kbd><span>JUMP</span></div>
-            <div><kbd>SHIFT</kbd><span>SPRINT</span></div>
-            <div><kbd>B</kbd><span>FIRE MODE</span></div>
-            <div><kbd>H</kbd><span>TOGGLE GUIDE</span></div>
+          <div id="weapon-outline-1" class="weapon-icon">
+            <img src="/pistol-outline.png" alt="Pistol">
           </div>
         </div>
-
-        <div id="crosshair" class="crosshair" aria-hidden="true">
-          <i class="ch-top"></i><i class="ch-right"></i><i class="ch-bottom"></i><i class="ch-left"></i><i class="ch-dot"></i>
-        </div>
-        <div id="hit-marker" class="hit-marker" aria-hidden="true">
-          <i></i><i></i><i></i><i></i>
-        </div>
-        <div id="kill-feed" class="kill-feed"></div>
-        <div id="reload-prompt" class="reload-prompt">RELOAD <kbd>R</kbd></div>
-        <div id="capture-hint" class="capture-hint is-hidden">CLICK TO CAPTURE MOUSE</div>
       </div>
 
-      <section id="loading-screen" class="screen loading-screen">
-        <div class="loader-mark"><i></i><i></i><i></i></div>
-        <div class="eyebrow">DEPLOYING ARENA</div>
-        <div class="loading-title">POLY STRIKE</div>
-        <div class="loading-track"><i></i></div>
-      </section>
-
-      <section id="main-menu" class="screen main-menu is-hidden">
-        <div class="menu-scrim"></div>
-        <div class="menu-content">
-          <div class="brand-kicker"><span></span> TACTICAL TRAINING FACILITY</div>
-          <h1><span>POLY</span><strong>STRIKE</strong></h1>
-          <p class="tagline">ONE ARENA. ZERO HESITATION.</p>
-
-          <div class="mission-brief">
-            <div><span>01</span><p>Clear every hostile</p></div>
-            <div><span>02</span><p>Use cover, keep moving</p></div>
-            <div><span>03</span><p>Survive the encounter</p></div>
-          </div>
-
-
-          <div class="difficulty-block">
-            <div class="section-label">SELECT THREAT LEVEL</div>
-            <div class="difficulty-options" role="group" aria-label="Difficulty">
-              <button class="difficulty-button" data-difficulty="training">TRAIN<small>0 HOSTILES</small></button>
-              <button class="difficulty-button" data-difficulty="easy">EASY<small>15 HOSTILES</small></button>
-              <button class="difficulty-button active" data-difficulty="normal">NORMAL<small>20 HOSTILES</small></button>
-              <button class="difficulty-button" data-difficulty="hard">HARD<small>25 HOSTILES</small></button>
-            </div>
-          </div>
-
-          <div class="menu-actions">
-            <button id="play-button" class="primary-button"><span>PLAY</span><i>→</i></button>
-            <button id="how-button" class="secondary-button">HOW TO PLAY</button>
-            <button id="quit-button" class="secondary-button subtle">QUIT</button>
-          </div>
-          <div class="menu-footer"><span>WASD TO MOVE</span><span>MOUSE TO AIM</span><span>ESC TO PAUSE</span></div>
+      <div class="hud-top-center">
+        <div class="objective-chip">
+          <span class="pulse-dot"></span>
+          <span>HOSTILES</span>
+          <strong id="enemies-value">0</strong>
         </div>
-      </section>
+        <div id="threat-callout" class="threat-callout"></div>
+      </div>
 
-      <section id="how-screen" class="screen modal-screen is-hidden">
-        <div class="panel how-panel">
-          <div class="panel-kicker">FIELD MANUAL // 01</div>
-          <h2>HOW TO PLAY</h2>
-          <div class="controls-grid">
-            <div><kbd>W A S D</kbd><span>MOVE</span></div>
-            <div><kbd>MOUSE</kbd><span>LOOK / AIM</span></div>
-            <div><kbd>LMB</kbd><span>FIRE</span></div>
-            <div><kbd>RMB</kbd><span>ADS / AIM</span></div>
-            <div><kbd>R</kbd><span>RELOAD</span></div>
-            <div><kbd>SPACE</kbd><span>JUMP</span></div>
-            <div><kbd>SHIFT</kbd><span>SPRINT</span></div>
-            <div><kbd>ESC</kbd><span>PAUSE</span></div>
+      <div class="hud-bottom-left">
+        <div id="weapon-name" class="weapon-name">M416</div>
+        <div id="move-state" class="move-state">READY</div>
+      </div>
+
+      <div class="hud-bottom-right">
+        <div class="ammo-label">30<span>/ 120</span></div>
+        <div class="ammo-state"><i id="reload-fill"></i></div>
+        <div class="reload-copy" id="reload-copy">R&nbsp;&nbsp;RELOAD</div>
+      </div>
+
+      <div id="crosshair" class="crosshair" aria-hidden="true">
+        <i class="ch-top"></i><i class="ch-right"></i><i class="ch-bottom"></i><i class="ch-left"></i><i
+          class="ch-dot"></i>
+      </div>
+      <div id="hit-marker" class="hit-marker" aria-hidden="true">
+        <i></i><i></i><i></i><i></i>
+      </div>
+      <div id="kill-feed" class="kill-feed"></div>
+      <div id="reload-prompt" class="reload-prompt">RELOAD <kbd>R</kbd></div>
+      <div id="capture-hint" class="capture-hint is-hidden">CLICK TO CAPTURE MOUSE</div>
+    </div>
+
+    <section id="loading-screen" class="screen loading-screen">
+      <div class="loader-mark"><i></i><i></i><i></i></div>
+      <div class="eyebrow">DEPLOYING ARENA</div>
+      <div class="loading-title">POLY STRIKE</div>
+      <div class="loading-track"><i></i></div>
+    </section>
+
+    <section id="main-menu" class="screen main-menu is-hidden">
+      <div class="menu-scrim"></div>
+      <div class="menu-content">
+        <div class="brand-kicker"><span></span> TACTICAL TRAINING FACILITY</div>
+        <h1><span>POLY</span><strong>STRIKE</strong></h1>
+        <p class="tagline">ONE ARENA. ZERO HESITATION.</p>
+
+        <div class="mission-brief">
+          <div><span>01</span>
+            <p>Clear every hostile</p>
           </div>
-          <div class="tactical-note">
-            <strong>FIELD NOTE</strong>
-            <p>Hostiles react before firing, but they are not perfect shots. Break sightlines, use cover, and eliminate orange and yellow units quickly.</p>
+          <div><span>02</span>
+            <p>Use cover, keep moving</p>
           </div>
+          <div><span>03</span>
+            <p>Survive the encounter</p>
+          </div>
+        </div>
+
+
+        <div class="difficulty-block">
+          <div class="section-label">SELECT THREAT LEVEL</div>
+          <div class="difficulty-options" role="group" aria-label="Difficulty">
+            <button class="difficulty-button" data-difficulty="training">TRAIN<small>0 HOSTILES</small></button>
+            <button class="difficulty-button" data-difficulty="easy">EASY<small>15 HOSTILES</small></button>
+            <button class="difficulty-button active" data-difficulty="normal">NORMAL<small>20 HOSTILES</small></button>
+            <button class="difficulty-button" data-difficulty="hard">HARD<small>25 HOSTILES</small></button>
+          </div>
+        </div>
+
+        <div class="menu-actions">
+          <button id="play-button" class="primary-button"><span>PLAY</span><i>→</i></button>
+          <button id="how-button" class="secondary-button">SETTINGS</button>
+          <button id="quit-button" class="secondary-button subtle">QUIT</button>
+        </div>
+        <div class="menu-footer"><span>WASD TO MOVE</span><span>MOUSE TO AIM</span><span>ESC TO PAUSE</span></div>
+      </div>
+    </section>
+
+    <section id="how-screen" class="screen modal-screen is-hidden">
+      <div class="panel how-panel">
+        <div class="panel-kicker">SYSTEM CONFIGURATION</div>
+        <h2>SETTINGS</h2>
+        <div class="settings-tabs">
+          <button class="tab-btn active" data-tab="controls">CONTROLS</button>
+          <button class="tab-btn" data-tab="graphics">GRAPHICS</button>
+        </div>
+        
+        <div id="tab-controls" class="tab-content">
           <div class="settings-row">
             <label for="sensitivity">SENSITIVITY <output id="sensitivity-value">1.0</output></label>
             <input id="sensitivity" type="range" min="0.4" max="2" value="1" step="0.1" />
           </div>
-          <button id="how-back-button" class="primary-button"><span>BACK</span><i>→</i></button>
+          <div class="settings-row" style="margin-top: -10px; margin-bottom: 25px;">
+            <label for="invert-y" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+              INVERT MOUSE Y <input id="invert-y" type="checkbox" style="width: 24px; height: 24px; margin: 0; cursor: pointer;" />
+            </label>
+          </div>
+          <div class="controls-grid" id="read-only-bindings-grid" style="pointer-events: none; opacity: 0.85;">
+            <div><kbd data-read-action="forward">W</kbd><span>FORWARD</span></div>
+            <div><kbd data-read-action="backward">S</kbd><span>BACKWARD</span></div>
+            <div><kbd data-read-action="left">A</kbd><span>LEFT</span></div>
+            <div><kbd data-read-action="right">D</kbd><span>RIGHT</span></div>
+            <div><kbd data-read-action="jump">Space</kbd><span>JUMP</span></div>
+            <div><kbd data-read-action="sprint">Shift</kbd><span>SPRINT</span></div>
+            <div><kbd data-read-action="reload">R</kbd><span>RELOAD</span></div>
+          </div>
+          <button id="custom-controls-btn" class="secondary-button" style="width: 100%; text-align: center; justify-content: center; font-size: 1rem; padding: 12px;">CUSTOMIZE CONTROLS</button>
         </div>
-      </section>
 
-      <section id="pause-screen" class="screen modal-screen is-hidden">
-        <div class="panel pause-panel">
-          <div class="panel-kicker">TACTICAL LINK // HOLD</div>
-          <h2>GAME PAUSED</h2>
-          <p>Hostile activity suspended.</p>
-          <div class="vertical-actions">
-            <button id="resume-button" class="primary-button"><span>RESUME</span><i>→</i></button>
-            <button id="restart-button" class="secondary-button">RESTART</button>
-            <button id="pause-menu-button" class="secondary-button subtle">MAIN MENU</button>
+        <div id="tab-graphics" class="tab-content is-hidden">
+          <div class="settings-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
+            <label style="width: 100%; text-align: center; margin-bottom: 15px;">GRAPHICS QUALITY</label>
+            <div class="graphics-options" style="display: flex; gap: 8px; width: 100%; justify-content: center;">
+              <button class="graphics-btn" data-quality="low">LOW</button>
+              <button class="graphics-btn" data-quality="medium">MED</button>
+              <button class="graphics-btn active" data-quality="high">HIGH</button>
+              <button class="graphics-btn" data-quality="ultra">ULTRA</button>
+            </div>
           </div>
         </div>
-      </section>
 
-      <section id="end-screen" class="screen end-screen is-hidden">
-        <div class="end-grid"></div>
-        <div class="panel end-panel">
-          <div id="end-kicker" class="panel-kicker">MISSION REPORT</div>
-          <h2 id="end-title">MISSION COMPLETE</h2>
-          <p id="end-subtitle">ARENA SECURED</p>
-          <div class="stats">
-            <div><span>HOSTILES ELIMINATED</span><strong id="end-kills">0 / 8</strong></div>
-            <div><span>HEALTH REMAINING</span><strong id="end-health">100%</strong></div>
-          </div>
-          <div class="end-actions">
-            <button id="again-button" class="primary-button"><span>PLAY AGAIN</span><i>↻</i></button>
-            <button id="end-menu-button" class="secondary-button">MAIN MENU</button>
-          </div>
+        <button id="how-back-button" class="primary-button" style="margin-top: 25px; font-size: 1rem;"><span>BACK</span><i>→</i></button>
+      </div>
+    </section>
+
+    <section id="custom-controls-screen" class="screen modal-screen is-hidden">
+      <div class="panel how-panel">
+        <div class="panel-kicker">INPUT CONFIGURATION</div>
+        <h2>KEYBINDINGS</h2>
+        <div class="controls-grid" id="keybindings-grid">
+          <div><button class="keybind-btn" data-action="forward">W</button><span>FORWARD</span></div>
+          <div><button class="keybind-btn" data-action="backward">S</button><span>BACKWARD</span></div>
+          <div><button class="keybind-btn" data-action="left">A</button><span>LEFT</span></div>
+          <div><button class="keybind-btn" data-action="right">D</button><span>RIGHT</span></div>
+          <div><button class="keybind-btn" data-action="jump">Space</button><span>JUMP</span></div>
+          <div><button class="keybind-btn" data-action="sprint">Shift</button><span>SPRINT</span></div>
+          <div><button class="keybind-btn" data-action="reload">R</button><span>RELOAD</span></div>
         </div>
-      </section>
+        <button id="custom-controls-back" class="primary-button" style="margin-top: 15px; font-size: 1rem;"><span>BACK</span><i>→</i></button>
+      </div>
+    </section>
 
-      <section id="quit-screen" class="screen modal-screen is-hidden">
-        <div class="panel quit-panel">
-          <div class="panel-kicker">TACTICAL LINK // CLOSED</div>
-          <h2>SESSION ENDED</h2>
-          <p>You can close this browser tab.</p>
-          <button id="quit-back-button" class="primary-button"><span>RECONNECT</span><i>→</i></button>
+    <section id="pause-screen" class="screen modal-screen is-hidden">
+      <div class="panel pause-panel">
+        <div class="panel-kicker">TACTICAL LINK // HOLD</div>
+        <h2>GAME PAUSED</h2>
+        <p>Hostile activity suspended.</p>
+        <div class="vertical-actions">
+          <button id="resume-button" class="primary-button"><span>RESUME</span><i>→</i></button>
+          <button id="how-button-pause" class="secondary-button">SETTINGS</button>
+          <button id="restart-button" class="secondary-button">RESTART</button>
+          <button id="pause-menu-button" class="secondary-button subtle">MAIN MENU</button>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <div class="corner-brand">LPS<span class="slash">//</span><span id="fps-counter">0</span> FPS</div>
-    </main>
-    <noscript>This game requires JavaScript and WebGL.</noscript>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+    <section id="end-screen" class="screen end-screen is-hidden">
+      <div class="end-grid"></div>
+      <div class="panel end-panel">
+        <div id="end-kicker" class="panel-kicker">MISSION REPORT</div>
+        <h2 id="end-title">MISSION COMPLETE</h2>
+        <p id="end-subtitle">ARENA SECURED</p>
+        <div class="stats">
+          <div><span>HOSTILES ELIMINATED</span><strong id="end-kills">0 / 8</strong></div>
+          <div><span>HEALTH REMAINING</span><strong id="end-health">100%</strong></div>
+        </div>
+        <div class="end-actions">
+          <button id="again-button" class="primary-button"><span>PLAY AGAIN</span><i>↻</i></button>
+          <button id="end-menu-button" class="secondary-button">MAIN MENU</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="quit-screen" class="screen modal-screen is-hidden">
+      <div class="panel quit-panel">
+        <div class="panel-kicker">TACTICAL LINK // CLOSED</div>
+        <h2>SESSION ENDED</h2>
+        <p>You can close this browser tab.</p>
+        <button id="quit-back-button" class="primary-button"><span>RECONNECT</span><i>→</i></button>
+      </div>
+    </section>
+
+    <div class="corner-brand">LPS<span>//</span>FPS</div>
+  </main>
+  <noscript>This game requires JavaScript and WebGL.</noscript>
+  <script type="module" src="/src/main.js"></script>
+</body>
+
 </html>

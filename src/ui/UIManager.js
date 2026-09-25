@@ -8,6 +8,7 @@ export class UIManager {
       loading: document.querySelector('#loading-screen'),
       menu: document.querySelector('#main-menu'),
       how: document.querySelector('#how-screen'),
+      customControls: document.querySelector('#custom-controls-screen'),
       pause: document.querySelector('#pause-screen'),
       end: document.querySelector('#end-screen'),
       quit: document.querySelector('#quit-screen'),
@@ -59,8 +60,23 @@ export class UIManager {
 
     const actions = [
       ['#play-button', () => this.callbacks.startMatch?.(this.difficulty, 'arena')],
-      ['#how-button', () => this.show('how')],
-      ['#how-back-button', () => this.show('menu')],
+      ['#how-button', () => {
+        this.settingsSource = 'menu';
+        this.show('how');
+      }],
+      ['#how-button-pause', () => {
+        this.settingsSource = 'pause';
+        this.show('how');
+      }],
+      ['#how-back-button', () => {
+        if (this.settingsSource === 'pause') {
+          this.show('pause');
+        } else {
+          this.show('menu');
+        }
+      }],
+      ['#custom-controls-btn', () => this.show('customControls')],
+      ['#custom-controls-back', () => this.show('how')],
       ['#quit-button', () => this.callbacks.quit?.()],
       ['#quit-back-button', () => this.callbacks.showMenu?.()],
       ['#resume-button', () => this.callbacks.resume?.()],
@@ -78,13 +94,90 @@ export class UIManager {
       });
     });
 
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.add('is-hidden'));
+        
+        btn.classList.add('active');
+        document.querySelector(`#tab-${btn.dataset.tab}`).classList.remove('is-hidden');
+      });
+    });
+
     this.sensitivity.addEventListener('input', () => {
       const value = Number(this.sensitivity.value);
       this.sensitivityValue.value = value.toFixed(1);
       this.callbacks.setSensitivity?.(value);
     });
 
+    const invertY = document.querySelector('#invert-y');
+    if (invertY) {
+      invertY.checked = localStorage.getItem('invertY') === 'true';
+      invertY.addEventListener('change', (e) => {
+        this.callbacks.setInvertY?.(e.target.checked);
+      });
+    }
+
+    const graphicsBtns = document.querySelectorAll('.graphics-btn');
+    if (graphicsBtns.length > 0) {
+      const savedQuality = localStorage.getItem('graphicsQuality') || 'high';
+      graphicsBtns.forEach(b => b.classList.toggle('active', b.dataset.quality === savedQuality));
+      
+      graphicsBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          graphicsBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const val = btn.dataset.quality;
+          localStorage.setItem('graphicsQuality', val);
+          this.callbacks.setGraphicsQuality?.(val);
+        });
+      });
+    }
+
+    const savedBindings = JSON.parse(localStorage.getItem('bindings')) || {
+      forward: 'KeyW', backward: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', sprint: 'ShiftLeft', reload: 'KeyR'
+    };
+
+    const updateBindingUIs = (action, code) => {
+      const displayStr = code.replace('Key', '').replace('Arrow', '');
+      const rebindBtn = document.querySelector(`.keybind-btn[data-action="${action}"]`);
+      if (rebindBtn) {
+        rebindBtn.textContent = displayStr;
+        rebindBtn.dataset.currentKey = displayStr;
+      }
+      const readKbd = document.querySelector(`kbd[data-read-action="${action}"]`);
+      if (readKbd) readKbd.textContent = displayStr;
+    };
+
+    Object.entries(savedBindings).forEach(([action, code]) => updateBindingUIs(action, code));
+
+    let activeRebindBtn = null;
+    const rebindBtns = document.querySelectorAll('.keybind-btn');
+    rebindBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (activeRebindBtn) activeRebindBtn.textContent = activeRebindBtn.dataset.currentKey;
+        activeRebindBtn = btn;
+        btn.dataset.currentKey = btn.textContent;
+        btn.textContent = '...';
+      });
+    });
+
     window.addEventListener('keydown', (e) => {
+      if (activeRebindBtn) {
+        e.preventDefault();
+        const code = e.code;
+        if (code === 'Escape') {
+          activeRebindBtn.textContent = activeRebindBtn.dataset.currentKey;
+        } else {
+          updateBindingUIs(activeRebindBtn.dataset.action, code);
+          this.callbacks.setBinding?.(activeRebindBtn.dataset.action, code);
+        }
+        activeRebindBtn = null;
+        return;
+      }
+      
       if (e.code === 'KeyH' && !e.repeat) {
         this.controlsOverlay?.classList.toggle('is-hidden');
       }

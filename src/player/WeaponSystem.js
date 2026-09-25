@@ -330,7 +330,7 @@ export class WeaponSystem {
     this.weaponRig?.setAdsVisibility(this.adsAmount > 0.5);
     this.weaponRig?.update(delta);
     this.updateReload(delta);
-    if (this.input.wasPressed('KeyR')) this.startReload();
+    if (this.input.wasActionPressed('reload')) this.startReload();
     const movementFactor = Math.min(this.player.currentSpeed / this.player.config.sprintSpeed, 1);
     const adsSway = THREE.MathUtils.lerp(1, this.player.config.ads.swayMultiplier, this.adsAmount);
     const adsSpread = THREE.MathUtils.lerp(1, this.player.config.ads.spreadMultiplier, this.adsAmount);
