@@ -2,6 +2,19 @@ import * as THREE from 'three';
 import { GAME_CONFIG } from '../config.js';
 import { HealthSystem } from './HealthSystem.js';
 
+// Depenetration search: ring distances in metres, tried nearest first.
+const ESCAPE_RINGS = [0.12, 0.24, 0.38, 0.55, 0.75, 1.0, 1.3, 1.7];
+const ESCAPE_DIRECTIONS = 16;
+const ESCAPE_OFFSETS = [
+  [0.45, 0], [-0.45, 0], [0, 0.45], [0, -0.45],
+  [0.32, 0.32], [-0.32, 0.32], [0.32, -0.32], [-0.32, -0.32],
+  [0.75, 0], [-0.75, 0], [0, 0.75], [0, -0.75],
+];
+// Cancels the collision world's floor skin while descending, so a body resting
+// on a surface is stopped by it instead of quietly sinking through it.
+const DESCEND_TOLERANCE = -0.04;
+const ASCEND_TOLERANCE = 0.02;
+
 export class PlayerController {
   constructor({ scene, camera, input, arena, audio }) {
     this.scene = scene;
@@ -131,7 +144,8 @@ export class PlayerController {
       this.grounded = false;
       this.audio.play('jump');
     }
-    this.velocity.y -= this.config.gravity * delta;
+    // Gravity is integrated once, inside applyGravity, together with the
+    // substepped vertical sweep. Applying it here as well halved the jump arc.
 
     const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     if (horizontalSpeed > targetSpeed) {
@@ -198,72 +212,204 @@ export class PlayerController {
 
   moveHorizontal(axis, amount) {
     if (Math.abs(amount) < 0.000001) return;
+    const radius = this.config.radius;
+    const height = this.config.height;
+
+    // Anything short enough to step onto is not a wall, so a body walks over
+    // kerbs, crates and low barriers instead of being stopped by them.
+    const stepTolerance = this.grounded ? this.config.stepHeight : 0.04;
     const tentative = this.root.position.clone();
     tentative[axis] += amount;
-    if (this.arena.canPlayerOccupy(tentative, this.config.radius, this.config.height, this)) {
+
+    if (this.arena.canPlayerOccupy(tentative, radius, height, this, stepTolerance)) {
       this.root.position[axis] = tentative[axis];
+      // The step tolerance let the body move into something low, so lift it onto
+      // that surface now. Without this the body would end up embedded in a step
+      // it is allowed to pass, because the ground query only looks downwards.
+      if (this.grounded) this.liftOntoStep(tentative);
       return;
     }
 
     if (!this.grounded) return;
-    for (let lift = 0.08; lift <= this.config.stepHeight + 0.0001; lift += 0.08) {
-      const stepped = tentative.clone();
-      stepped.y += lift;
-      if (this.arena.canPlayerOccupy(stepped, this.config.radius, this.config.height, this)) {
-        this.root.position[axis] = stepped[axis];
-        this.root.position.y = stepped.y;
-        return;
-      }
-    }
-  }
-
-  applyGravity(delta) {
-    const nextY = this.root.position.y + this.velocity.y * delta;
-    const ground = this.arena.getGroundHeight(
-      this.root.position,
-      this.config.radius,
-      this.root.position.y,
-      nextY,
-    );
-    if (this.velocity.y <= 0 && nextY <= ground + 0.001) {
-      const landing = this.root.position.clone();
-      landing.y = ground;
-      if (this.arena.canPlayerOccupy(landing, this.config.radius, this.config.height, this)) {
-        this.root.position.y = ground;
-        this.velocity.y = 0;
-        this.grounded = true;
-      } else {
-        this.velocity.y = 0;
-        this.grounded = false;
-      }
+    // Still blocked even after allowing a step: try climbing onto a ledge.
+    if (this.arena.tryStepMove(this.root.position, axis === 'x' ? amount : 0, axis === 'z' ? amount : 0, radius, height, this.config.stepHeight, this)) {
       return;
     }
 
-    if (this.velocity.y > 0) {
-      const ceiling = this.arena.getCeilingHeight(
+    // Last resort, slide along the wall.
+    if (this.arena.canPlayerOccupy(tentative, radius, height, this, 0)) {
+      this.root.position[axis] = tentative[axis];
+    }
+  }
+
+  /**
+   * Raises the body onto whatever it just stepped into.
+   *
+   * A step tolerance deliberately lets a body move into a low obstacle, so the
+   * lift has to happen as part of that move. The surface being stepped onto is
+   * *above* the current position, so the search starts above the head and walks
+   * down; looking only downwards would miss it and leave the body embedded in
+   * the very obstacle it was allowed to pass.
+   */
+  liftOntoStep(tentative) {
+    const radius = this.config.radius;
+    const height = this.config.height;
+    const baseY = this.root.position.y;
+    // Only lift when the body is genuinely inside something at this level.
+    if (this.arena.canPlayerOccupy(tentative, radius, height, this, 0.02)) return;
+
+    const surface = this.arena.getGroundHeight(
+      tentative,
+      radius,
+      baseY + this.config.stepHeight + 0.35,
+      baseY + this.config.stepHeight + 0.35,
+      this.config.stepHeight + 0.55,
+    );
+    const climb = surface - baseY;
+    if (climb <= 0.02 || climb > this.config.stepHeight) return;
+    const lifted = tentative.clone();
+    lifted.y = surface;
+    if (!this.arena.canPlayerOccupy(lifted, radius, height, this, ASCEND_TOLERANCE)) return;
+    this.root.position.copy(lifted);
+  }
+
+  applyGravity(delta) {
+    const radius = this.config.radius;
+    const height = this.config.height;
+    const substep = this.config.verticalSubstep;
+    const startY = this.root.position.y;
+
+    this.velocity.y -= this.config.gravity * delta;
+    if (this.velocity.y < -this.config.maxFallSpeed) this.velocity.y = -this.config.maxFallSpeed;
+    let remaining = this.velocity.y * delta;
+
+    this.grounded = false;
+    let currentY = startY;
+    let hitCeiling = false;
+    let landed = false;
+
+    // Integrated in small substeps so a fast drop can never skip a thin floor.
+    while (Math.abs(remaining) > 1e-4) {
+      const step = THREE.MathUtils.clamp(remaining, -substep, substep);
+      remaining -= step;
+      const nextY = currentY + step;
+      const tentative = this.root.position.clone();
+      tentative.y = nextY;
+
+      if (this.arena.canPlayerOccupy(tentative, radius, height, this, DESCEND_TOLERANCE)) {
+        currentY = nextY;
+        this.root.position.y = nextY;
+        continue;
+      }
+      if (step > 0) {
+        hitCeiling = true;
+        break;
+      }
+
+      // Blocked on the way down. Rest on whatever stopped the body, which is
+      // more reliable than trusting a single point ray for the surface.
+      for (let k = 7; k >= 1; k -= 1) {
+        const candidate = currentY - (currentY - nextY) * (k / 8);
+        tentative.y = candidate;
+        if (!this.arena.canPlayerOccupy(tentative, radius, height, this, DESCEND_TOLERANCE)) continue;
+        this.root.position.y = candidate;
+        currentY = candidate;
+        break;
+      }
+      landed = true;
+      break;
+    }
+
+    if (hitCeiling) this.velocity.y = 0;
+
+    if (landed) {
+      this.velocity.y = 0;
+      this.grounded = true;
+    } else if (this.velocity.y <= 0) {
+      // Snap onto the floor when it is within a few centimetres. This is what
+      // keeps the body grounded while standing still and while walking down
+      // steps, instead of sinking a little further every frame.
+      //
+      // The search starts from head height and walks down, so a body that is
+      // already below a ledge (having stepped off it, for instance) still finds
+      // the surface it is really standing on.
+      const snap = this.arena.getGroundHeight(
         this.root.position,
-        this.config.radius,
-        this.root.position.y,
-        nextY,
-        this.config.height,
+        radius,
+        currentY + 0.6,
+        currentY + 0.6,
+        0.6 + substep * 2 + 0.1,
       );
-      if (Number.isFinite(ceiling) && nextY + this.config.height > ceiling) {
-        this.root.position.y = ceiling - this.config.height;
-        this.velocity.y = 0;
-        this.grounded = false;
-        return;
+      const drop = currentY - snap;
+      if (drop <= 0.09 && drop >= -0.35) {
+        const settled = this.root.position.clone();
+        settled.y = snap;
+        if (this.arena.canPlayerOccupy(settled, radius, height, this, ASCEND_TOLERANCE)) {
+          this.root.position.y = snap;
+          this.velocity.y = 0;
+          this.grounded = true;
+        }
       }
     }
 
-    const tentative = this.root.position.clone();
-    tentative.y = nextY;
-    if (this.arena.canPlayerOccupy(tentative, this.config.radius, this.config.height, this)) {
-      this.root.position.y = nextY;
-      this.grounded = false;
-    } else {
-      this.velocity.y = 0;
-      this.grounded = false;
+    if (!this.grounded) this.depenetrate();
+  }
+
+  /**
+   * Pushes the body back out of anything it ended up inside. Without this a
+   * body that clips a ledge edge on the way down would stay wedged in it.
+   *
+   * The search fans out over directions and distances rather than a fixed ring,
+   * so a body that has worked its way into a narrow crack between two props can
+   * always find the way back out instead of being stuck there permanently.
+   */
+  depenetrate() {
+    const radius = this.config.radius;
+    const height = this.config.height;
+    const base = this.root.position;
+    if (this.arena.canPlayerOccupy(base, radius, height, this, 0.02)) return false;
+
+    // Closest fit first: short nudges before long relocations.
+    for (let ring = 0; ring < ESCAPE_RINGS.length; ring += 1) {
+      const distance = ESCAPE_RINGS[ring];
+      for (let i = 0; i < ESCAPE_DIRECTIONS; i += 1) {
+        const angle = (i / ESCAPE_DIRECTIONS) * Math.PI * 2;
+        const probe = new THREE.Vector3(
+          base.x + Math.cos(angle) * distance,
+          base.y,
+          base.z + Math.sin(angle) * distance,
+        );
+        if (!this.arena.canPlayerOccupy(probe, radius, height, this, 0.02)) continue;
+        base.copy(probe);
+        return true;
+      }
     }
+
+    // Nothing to the side: lift clear of the floor instead.
+    const ground = this.arena.getGroundHeight(base, radius, base.y, base.y, 8);
+    const baseY = Number.isFinite(ground) ? ground : base.y;
+    for (let lift = 0.12; lift <= 2.4; lift += 0.12) {
+      const probe = new THREE.Vector3(base.x, baseY + lift, base.z);
+      if (!this.arena.canPlayerOccupy(probe, radius, height, this, 0.02)) continue;
+      base.copy(probe);
+      return true;
+    }
+    return false;
+  }
+
+  /** Nudges the body sideways to get out from under a too low ceiling. */
+  escapeFromCrouch(target) {
+    const radius = this.config.radius;
+    const height = this.config.height;
+    for (let i = 0; i < ESCAPE_OFFSETS.length; i += 1) {
+      const probe = target.clone();
+      probe.x += ESCAPE_OFFSETS[i][0];
+      probe.z += ESCAPE_OFFSETS[i][1];
+      if (!this.arena.canPlayerOccupy(probe, radius, height, this, 0.02)) continue;
+      this.root.position.copy(probe);
+      return true;
+    }
+    return false;
   }
 
   getAimDirection(target = new THREE.Vector3()) {

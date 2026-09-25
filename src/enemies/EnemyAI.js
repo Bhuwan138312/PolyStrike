@@ -445,7 +445,7 @@ export class EnemyAI {
     while (this.path.length && this.root.position.distanceTo(this.path[0]) < 0.48) this.path.shift();
     if (!this.path.length) {
       if (this.navigation.isWalkablePoint(target)
-        && this.arena.canPlayerOccupy(target, 0.43, 1.85, this)) {
+        && this.arena.canPlayerOccupy(target, 0.43, 1.85, this, 0.4)) {
         const direct = target.clone().sub(this.root.position).setY(0);
         if (direct.lengthSq() > 0.0001) {
           direct.normalize();

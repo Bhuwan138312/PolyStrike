@@ -10,6 +10,7 @@ export class WeaponProjectileSystem {
     getTargets,
     onImpact,
     isValidHit,
+    traceShot = null,
     maxActive = 64,
     radius = 0.009,
     maxStepDistance = 2.5,
@@ -18,6 +19,10 @@ export class WeaponProjectileSystem {
     this.getTargets = getTargets;
     this.onImpact = onImpact;
     this.isValidHit = isValidHit;
+    // Solid, double sided world trace. Using this instead of a plain
+    // three.js raycast is what stops bullets from escaping through walls, and
+    // from tunnelling out when the muzzle is buried inside geometry.
+    this.traceShot = traceShot;
     this.maxActive = maxActive;
     this.maxStepDistance = Math.max(0.25, maxStepDistance);
     this.projectiles = [];
@@ -29,6 +34,7 @@ export class WeaponProjectileSystem {
     this.templateScale = new THREE.Vector3(1, 1, 1);
     this.raycaster = new THREE.Raycaster();
     this.raycaster.near = 0;
+    this.raycaster.firstHitOnly = true;
     this.geometry = new THREE.CylinderGeometry(radius * 0.8, radius * 2.5, 0.24, 6, 1, true);
     this.material = new THREE.MeshBasicMaterial({
       color: 0xffffff, // White-hot core
@@ -137,6 +143,7 @@ export class WeaponProjectileSystem {
       console.warn('[WeaponProjectileSystem] Failed to acquire collision targets.', error);
       return;
     }
+    const usesWorldTrace = typeof this.traceShot === 'function';
     if (!targets.length && !this.warnedEmptyTargets) {
       console.warn('[WeaponProjectileSystem] No projectile collision targets are available.');
       this.warnedEmptyTargets = true;
@@ -153,10 +160,39 @@ export class WeaponProjectileSystem {
         let intersection = null;
 
         try {
-          this.raycaster.set(start, projectile.direction);
-          this.raycaster.far = travel;
-          intersection = this.raycaster.intersectObjects(targets, false)
-            .find((candidate) => this.isValidHit?.(candidate) ?? true) ?? null;
+          // Static world first: it is the only thing that can be solid from
+          // both sides, so a shot can never pass through a building.
+          if (usesWorldTrace) {
+            const worldHit = this.traceShot(start, projectile.direction, travel);
+            if (worldHit) {
+              intersection = {
+                point: worldHit.point,
+                normal: worldHit.normal,
+                distance: worldHit.distance,
+                object: null,
+                isWorld: true,
+              };
+            }
+          }
+
+          if (targets.length) {
+            this.raycaster.set(start, projectile.direction);
+            this.raycaster.far = usesWorldTrace && intersection
+              ? Math.min(travel, intersection.distance)
+              : travel;
+            const dynamicHit = this.raycaster.intersectObjects(targets, false)
+              .find((candidate) => this.isValidHit?.(candidate) ?? true) ?? null;
+            if (dynamicHit && (!intersection || dynamicHit.distance < intersection.distance)) {
+              intersection = dynamicHit;
+            }
+          }
+
+          if (!intersection && !usesWorldTrace) {
+            this.raycaster.set(start, projectile.direction);
+            this.raycaster.far = travel;
+            intersection = this.raycaster.intersectObjects(targets, false)
+              .find((candidate) => this.isValidHit?.(candidate) ?? true) ?? null;
+          }
         } catch (error) {
           console.warn(`[WeaponProjectileSystem] Collision raycast failed for shot ${projectile.id}.`, error);
           this.removeProjectile(projectile);

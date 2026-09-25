@@ -23,6 +23,10 @@ export class UIManager {
     this.damageVignette = document.querySelector('#damage-vignette');
     this.crosshair = document.querySelector('#crosshair');
     this.hitMarker = document.querySelector('#hit-marker');
+    this.weaponOutlines = [
+      document.querySelector('#weapon-outline-0'),
+      document.querySelector('#weapon-outline-1')
+    ];
     this.killFeed = document.querySelector('#kill-feed');
     this.captureHint = document.querySelector('#capture-hint');
     this.moveState = document.querySelector('#move-state');
@@ -122,6 +126,12 @@ export class UIManager {
         ? (hasReserve ? 'MAGAZINE EMPTY' : 'NO AMMO')
         : 'R  RELOAD';
     this.reloadFill.style.transform = `scaleX(${reloading ? Math.min(1, elapsed / config.reloadDuration) : magazine / config.magazineSize})`;
+  }
+
+  setActiveWeaponIcon(index) {
+    this.weaponOutlines.forEach((icon, i) => {
+      if (icon) icon.classList.toggle('active', i === index);
+    });
   }
 
   setMoveState(state) {

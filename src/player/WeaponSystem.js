@@ -58,6 +58,7 @@ export class WeaponSystem {
     this.projectiles = new WeaponProjectileSystem({
       scene,
       getTargets: () => this.getCollisionTargets(),
+      traceShot: (origin, direction, far) => this.arena.traceShot(origin, direction, far),
       onImpact: (intersection, direction) => this.handleProjectileImpact(intersection, direction),
       isValidHit: (intersection) => this.isValidProjectileHit(intersection),
       maxActive: this.config.mechanics.projectile.maxActive,
@@ -499,7 +500,13 @@ export class WeaponSystem {
       }
       mag.velocity.y -= 12 * delta;
       const nextPos = mag.mesh.position.clone().addScaledVector(mag.velocity, delta);
-      const ground = this.arena.getGroundHeight(mag.mesh.position, 0.05, mag.mesh.position.y, nextPos.y);
+      const ground = this.arena.getGroundHeight(
+        mag.mesh.position,
+        0.06,
+        mag.mesh.position.y,
+        nextPos.y,
+        Math.max(3, Math.abs(mag.velocity.y) * delta + 0.5),
+      );
       if (nextPos.y <= ground + 0.03 && mag.velocity.y < 0) {
         nextPos.y = ground + 0.03;
         if (mag.bounces < 2 && Math.abs(mag.velocity.y) > 0.5) {
@@ -644,13 +651,21 @@ export class WeaponSystem {
   }
 
   raycastAimTarget(origin, direction) {
+    const fallback = origin.clone().addScaledVector(direction, this.config.range);
     try {
+      // World geometry first (solid from both sides), then dynamic targets.
+      const worldHit = this.arena.traceShot(origin, direction, this.config.range);
+      let best = worldHit ? { point: worldHit.point, distance: worldHit.distance } : null;
       const targets = this.getCollisionTargets();
-      this.aimRaycaster.set(origin, direction);
-      this.aimRaycaster.far = this.config.range;
-      const hit = this.aimRaycaster.intersectObjects(targets, false)
-        .find((intersection) => this.isValidProjectileHit(intersection)) ?? null;
-      return hit?.point?.clone() ?? origin.clone().addScaledVector(direction, this.config.range);
+      if (targets.length) {
+        this.aimRaycaster.firstHitOnly = true;
+        this.aimRaycaster.set(origin, direction);
+        this.aimRaycaster.far = best ? best.distance : this.config.range;
+        const dynamicHit = this.aimRaycaster.intersectObjects(targets, false)
+          .find((intersection) => this.isValidProjectileHit(intersection));
+        if (dynamicHit && (!best || dynamicHit.distance < best.distance)) best = dynamicHit;
+      }
+      return best?.point?.clone() ?? fallback;
     } catch (error) {
       console.warn('[WeaponSystem] Aiming raycast failed.', error);
       return null;
@@ -670,14 +685,14 @@ export class WeaponSystem {
   }
 
   getCollisionTargets() {
-    return [
-      ...this.arena.raycastTargets,
-      ...(this.callbacks.getBotHitMeshes?.() ?? []),
-    ];
+    // Static geometry is traced through the arena's collision world; only the
+    // moving actors still need a mesh raycast.
+    return this.callbacks.getBotHitMeshes?.() ?? [];
   }
 
   isValidProjectileHit(intersection) {
-    const object = intersection.object;
+    const object = intersection?.object;
+    if (!object) return false;
     if (this.model.getObjectById(object.id)) return false;
     const bot = object.userData.bot;
     return !bot || !bot.dead;
@@ -698,12 +713,17 @@ export class WeaponSystem {
 
   handleProjectileImpact(intersection, direction) {
     this.shotDiagnostics.impacts += 1;
-    const normal = intersection.face?.normal?.clone().transformDirection(intersection.object.matrixWorld).normalize()
-      ?? direction.clone().negate();
-    const bot = intersection.object.userData.bot;
+    const object = intersection.object ?? null;
+    const faceNormal = intersection.face?.normal;
+    const normal = intersection.normal
+      ? intersection.normal.clone()
+      : (faceNormal && object
+        ? faceNormal.clone().transformDirection(object.matrixWorld).normalize()
+        : direction.clone().negate());
+    const bot = object?.userData?.bot;
     if (bot && !bot.dead) {
       this.shotDiagnostics.botHits += 1;
-      const headshot = Boolean(intersection.object.userData.head);
+      const headshot = Boolean(object.userData.head);
       this.effects.hit(intersection.point, headshot);
       this.callbacks.onBotHit?.(
         bot,

@@ -14,6 +14,10 @@ export const GAME_CONFIG = Object.freeze({
     gravity: 22,
     jumpSpeed: 7.25,
     stepHeight: 0.56,
+    // Vertical movement is integrated in small substeps and the fall speed is
+    // capped, so a fast drop can never pass through a thin floor or ledge.
+    maxFallSpeed: 32,
+    verticalSubstep: 0.16,
     ads: {
       transition: 0.18,
       fov: 68,

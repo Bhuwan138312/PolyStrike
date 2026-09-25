@@ -1,13 +1,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GAME_CONFIG } from '../config.js';
-import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-
-THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
-THREE.Mesh.prototype.raycast = acceleratedRaycast;
+import { CollisionWorld } from './CollisionWorld.js';
 
 const ARENA_SIZE = GAME_CONFIG.arenaHalfSize * 2;
+const DEFAULT_STEP_TOLERANCE = 0.5;
 
 export class ArenaMap {
   constructor(scene) {
@@ -20,6 +17,11 @@ export class ArenaMap {
     this.raycastTargets = [];
     this.coverColliders = [];
     this.dynamicActors = [];
+    // Triangle accurate collision for everything the GLB brings in. This is the
+    // single source of truth for body movement, bullet stops and line of sight.
+    this.collision = new CollisionWorld();
+    this.floorY = 0;
+    this.stepTolerance = DEFAULT_STEP_TOLERANCE;
     this.playerSpawns = [
       new THREE.Vector3(0, 0.08, 28),
       new THREE.Vector3(3, 0.08, 28),
@@ -42,22 +44,29 @@ export class ArenaMap {
     this.climbRoutes = [];
     this.navigation = null;
 
+    // Only used against dynamic actors (bots, projectiles). Static geometry goes
+    // through the baked collision world instead, which is solid from both sides.
     this.raycaster = new THREE.Raycaster();
     this.raycaster.near = 0;
-    this.raycaster.far = 100;
+    this.raycaster.far = 200;
     this.tempDirection = new THREE.Vector3();
 
     this.createLighting();
     this.createSkyDetails();
 
-    // Add an invisible backup floor so physics don't cause players to fall 
-    // infinitely while the asynchronous GLTF map is loading.
-    const backupFloor = new THREE.Mesh(new THREE.BoxGeometry(300, 2, 300), new THREE.MeshBasicMaterial({ visible: false }));
-    backupFloor.position.y = -1.1; // Slightly below expected ground
-    backupFloor.name = 'BackupFloor';
-    this.root.add(backupFloor);
-    this.raycastTargets.push(backupFloor);
-    this.addBoxCollider(new THREE.Vector3(0, -1.1, 0), new THREE.Vector3(300, 2, 300), false);
+    this.backupFloor = this.createBackupFloor();
+    this.raycastTargets.push(this.backupFloor);
+  }
+
+  createBackupFloor() {
+    const floor = new THREE.Mesh(
+      new THREE.BoxGeometry(300, 2, 300),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    );
+    floor.position.y = -1.1; // Slightly below the map's own ground level
+    floor.name = 'BackupFloor';
+    this.root.add(floor);
+    return floor;
   }
 
   loadMapModel(mapName = 'arena') {
@@ -65,67 +74,73 @@ export class ArenaMap {
       console.log(`[ArenaMap] Loading new 3D map model: ${mapName}...`);
       const loader = new GLTFLoader();
       loader.load(`/models/${mapName}.glb`, (gltf) => {
-        if (this.currentMapModel) {
-          this.root.remove(this.currentMapModel);
-        }
+        if (this.currentMapModel) this.root.remove(this.currentMapModel);
 
         this.colliders = [];
         this.raycastTargets = [];
         this.coverColliders = [];
-
-        const backupFloor = this.root.getObjectByName('BackupFloor');
-        if (backupFloor) {
-          this.raycastTargets.push(backupFloor);
-          this.addBoxCollider(new THREE.Vector3(0, -1.1, 0), new THREE.Vector3(300, 2, 300), false);
-        }
+        this.climbRoutes = [];
+        this.backupFloor = this.root.getObjectByName('BackupFloor') ?? this.createBackupFloor();
+        this.raycastTargets.push(this.backupFloor);
 
         const model = gltf.scene;
         this.currentMapModel = model;
-
-        // The map might need scaling. Let's scale it slightly if it's too small/big.
-        // Default scale = 1 for now, user can request changes later.
         model.scale.set(1, 1, 1);
-
-        model.updateMatrixWorld(true);
-        model.traverse((child) => {
-          if (child.isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-
-            // Register all solid meshes as collision boundaries and bullet targets
-            child.geometry.computeBoundsTree();
-            child.geometry.computeBoundingBox();
-            const box = new THREE.Box3().setFromObject(child);
-            const size = new THREE.Vector3();
-            box.getSize(size);
-            const center = new THREE.Vector3();
-            box.getCenter(center);
-
-            // Any object larger than 8x8 is treated as terrain (e.g. houses, ground).
-            // This allows you to enter houses because their giant AABB is ignored for horizontal blocking!
-            const isTerrain = size.x > 8 || size.z > 8 || size.y < 0.25;
-
-            this.colliders.push({
-              center: center,
-              size: size,
-              min: box.min,
-              max: box.max,
-              cover: !isTerrain,
-              isTerrain: isTerrain,
-            });
-
-            this.raycastTargets.push(child);
-            this.coverColliders.push(this.colliders[this.colliders.length - 1]);
-          }
-        });
         this.root.add(model);
-        console.log('[ArenaMap] 3D map loaded and registered for collisions!');
+        this.root.updateMatrixWorld(true);
+
+        const modelMeshes = [];
+        model.traverse((child) => {
+          if (!child.isMesh) return;
+          child.castShadow = true;
+          child.receiveShadow = true;
+          modelMeshes.push(child);
+
+          // AABBs are still useful for cover scoring; movement collision comes
+          // from the triangle accurate world below, so coarse boxes are harmless.
+          const box = new THREE.Box3().setFromObject(child);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+          const isSmallObject = size.x <= 8 && size.z <= 8 && size.y >= 0.25;
+          const collider = {
+            center,
+            size,
+            min: box.min.clone(),
+            max: box.max.clone(),
+            cover: isSmallObject,
+            isTerrain: !isSmallObject,
+          };
+          this.colliders.push(collider);
+          if (isSmallObject) this.coverColliders.push(collider);
+        });
+
+        this.buildCollision(modelMeshes, [this.backupFloor]);
+        console.log(
+          `[ArenaMap] 3D map loaded: ${this.collision.triangleCount} collision triangles, `
+          + `${this.collision.chunks.length} chunks, floor at y=${this.floorY.toFixed(2)}`,
+        );
         resolve();
       }, undefined, (error) => {
         console.error('[ArenaMap] Error loading map GLB:', error);
         reject(error);
       });
     });
+  }
+
+  /**
+   * Bakes the given meshes into the static collision world. Every static surface
+   * in the arena must be listed here: this is what bodies stand on, collide with
+   * and what bullets stop against.
+   */
+  buildCollision(meshes, extraMeshes = []) {
+    this.root.updateMatrixWorld(true);
+    const rootInverse = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
+    this.collision.begin(rootInverse);
+    for (const mesh of meshes) this.collision.addMesh(mesh);
+    for (const mesh of extraMeshes) this.collision.addMesh(mesh);
+    this.collision.finalize();
+    this.floorY = this.collision.floorY;
+    return this.collision;
   }
 
   createLighting() {
@@ -604,32 +619,45 @@ export class ArenaMap {
     this.dynamicActors = actors;
   }
 
+  /** Snaps a world XZ onto the real surface and confirms a body fits there. */
+  groundSnap(point, radius = 0.4, bodyHeight = 1.8) {
+    const ground = this.collision.groundHeight(point.x, point.z, radius, point.y + 40, 90);
+    const feet = Number.isFinite(ground) ? ground : this.floorY;
+    const candidate = new THREE.Vector3(point.x, feet + 0.04, point.z);
+    if (this.canPlayerOccupy(candidate, radius, bodyHeight, null, 0.02)) return candidate;
+    return null;
+  }
+
   getPlayerSpawn() {
-    let spawn = this.playerSpawns[Math.floor(Math.random() * this.playerSpawns.length)].clone();
+    const fallback = this.playerSpawns[Math.floor(Math.random() * this.playerSpawns.length)].clone();
+    let best = null;
 
     if (this.navigation) {
-      for (let attempts = 0; attempts < 100; attempts++) {
-        const x = Math.floor(Math.random() * this.navigation.size);
-        const z = Math.floor(Math.random() * this.navigation.size);
-        if (this.navigation.isWalkableCell(x, z)) {
-          spawn = this.navigation.cellToWorld(x, z);
-          break;
-        }
+      for (let attempts = 0; attempts < 140; attempts += 1) {
+        const cx = Math.floor(Math.random() * this.navigation.size);
+        const cz = Math.floor(Math.random() * this.navigation.size);
+        if (!this.navigation.isWalkableCell(cx, cz)) continue;
+        const snapped = this.groundSnap(this.navigation.cellToWorld(cx, cz), 0.42, 1.8);
+        if (snapped) return snapped;
       }
     }
 
-    this.raycaster.set(new THREE.Vector3(spawn.x, 100, spawn.z), new THREE.Vector3(0, -1, 0));
-    const hits = this.raycaster.intersectObjects(this.raycastTargets, false);
-    if (hits.length > 0) {
-      let lowestY = Infinity;
-      for (const hit of hits) {
-        if (hit.point.y < lowestY) lowestY = hit.point.y;
-      }
-      spawn.y = lowestY + 0.08;
-    } else {
-      spawn.y = 0.08;
+    best = this.groundSnap(fallback, 0.42, 1.8);
+    if (best) return best;
+
+    // Last resort: anywhere with clear sky above the base floor.
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 4 + Math.random() * 24;
+      const probe = new THREE.Vector3(
+        Math.cos(angle) * radius,
+        this.floorY,
+        Math.sin(angle) * radius,
+      );
+      const snapped = this.groundSnap(probe, 0.42, 1.8);
+      if (snapped) return snapped;
     }
-    return spawn;
+    return fallback.setY(this.floorY + 0.04);
   }
 
   findClimbRoute(from, target) {
@@ -642,20 +670,24 @@ export class ArenaMap {
     return null;
   }
 
-  canPlayerOccupy(position, radius, height, ignoreActor = null) {
+  /**
+   * Check if a player-sized cylinder can occupy the given position.
+   * Uses AABB checks for hand-placed objects + mesh raycasting for GLB model geometry.
+   */
+  canPlayerOccupy(position, radius, height, ignoreActor = null, stepTolerance = 0) {
     const bottom = position.y;
     const top = position.y + height;
 
-    // 1. Check AABB colliders for small objects (crates, barriers)
-    for (const collider of this.colliders) {
-      if (collider.isTerrain) continue; // Skip large meshes like houses and floor
-      if (top <= collider.min.y + 0.001 || bottom >= collider.max.y - 0.001) continue;
-      const closestX = THREE.MathUtils.clamp(position.x, collider.min.x, collider.max.x);
-      const closestZ = THREE.MathUtils.clamp(position.z, collider.min.z, collider.max.z);
-      const distanceSquared = (position.x - closestX) ** 2 + (position.z - closestZ) ** 2;
-      if (distanceSquared < radius * radius) return false;
+    // Static map geometry. Winding agnostic and solid from either side, so a
+    // body can never end up walking through a building. The baked world is a
+    // superset of every mesh, which is why the coarse AABB list is deliberately
+    // not consulted here: those boxes enclose free space and used to block
+    // perfectly valid spots (the source of bodies hanging in the air).
+    if (this.collision.overlapsCylinder(position.x, position.z, bottom, top, radius, stepTolerance)) {
+      return false;
     }
 
+    // Other bodies.
     for (const actor of this.dynamicActors) {
       if (actor.owner === ignoreActor || actor.owner.dead || actor.owner.removed) continue;
       const actorBottom = actor.position.y;
@@ -669,37 +701,72 @@ export class ArenaMap {
     return true;
   }
 
-  moveCircle(position, deltaX, deltaZ, radius, height, ignoreActor = null) {
+  moveCircle(position, deltaX, deltaZ, radius, height, ignoreActor = null, stepTolerance = this.stepTolerance) {
     const y = position.y;
     const tentativeX = position.clone();
     tentativeX.x += deltaX;
-    if (this.canPlayerOccupy(tentativeX, radius, height, ignoreActor)) position.x = tentativeX.x;
+    if (this.canPlayerOccupy(tentativeX, radius, height, ignoreActor, stepTolerance)) position.x = tentativeX.x;
     const tentativeZ = position.clone();
     tentativeZ.z += deltaZ;
-    if (this.canPlayerOccupy(tentativeZ, radius, height, ignoreActor)) position.z = tentativeZ.z;
+    if (this.canPlayerOccupy(tentativeZ, radius, height, ignoreActor, stepTolerance)) position.z = tentativeZ.z;
     position.y = y;
   }
 
-  getCeilingHeight(position, radius, currentHeight, proposedHeight, bodyHeight) {
-    const origin = new THREE.Vector3(position.x, currentHeight + 0.2, position.z);
-    this.raycaster.set(origin, new THREE.Vector3(0, 1, 0));
-    this.raycaster.far = bodyHeight + 1.0;
-    const hits = this.raycaster.intersectObjects(this.raycastTargets, false);
-    if (hits.length > 0) {
-      return hits[0].point.y;
+  /** Steps up onto anything short enough, then retries the slide. */
+  tryStepMove(position, deltaX, deltaZ, radius, height, stepHeight, ignoreActor = null) {
+    const tentative = position.clone();
+    tentative.x += deltaX;
+    tentative.z += deltaZ;
+    if (this.canPlayerOccupy(tentative, radius, height, ignoreActor, stepHeight)) {
+      position.copy(tentative);
+      return true;
     }
-    return Infinity;
+    const ground = this.getGroundHeight(tentative, radius, position.y, position.y, stepHeight + 0.45);
+    const rise = ground - position.y;
+    if (!Number.isFinite(ground) || rise <= 0.02 || rise > stepHeight) return false;
+    const stepped = tentative.clone();
+    stepped.y = ground;
+    if (!this.canPlayerOccupy(stepped, radius, height, ignoreActor, 0.02)) return false;
+    position.copy(stepped);
+    return true;
   }
 
-  getGroundHeight(position, radius, currentHeight, proposedHeight = currentHeight) {
-    const origin = new THREE.Vector3(position.x, Math.max(currentHeight, proposedHeight) + 0.6, position.z);
-    this.raycaster.set(origin, new THREE.Vector3(0, -1, 0));
-    this.raycaster.far = 10.0;
-    const hits = this.raycaster.intersectObjects(this.raycastTargets, false);
-    if (hits.length > 0) {
-      return hits[0].point.y;
-    }
-    return 0; // fallback to ground level
+  getCeilingHeight(position, radius, currentHeight, proposedHeight, bodyHeight) {
+    return this.collision.ceilingHeight(
+      position.x,
+      position.z,
+      Math.min(radius, 0.36),
+      currentHeight,
+      bodyHeight + 1.2,
+    );
+  }
+
+  /**
+   * Highest solid surface at or below the proposed height, searched across the
+   * body's footprint so it never falls through the seams between triangles.
+   * Never returns -Infinity, so a body can never get stuck floating in the air.
+   */
+  getGroundHeight(position, radius, currentHeight, proposedHeight = currentHeight, maxDrop = 3.4) {
+    const from = Math.max(currentHeight, proposedHeight);
+    const ground = this.collision.groundHeight(position.x, position.z, radius, from, maxDrop);
+    if (Number.isFinite(ground)) return ground;
+    return Math.min(from, this.floorY);
+  }
+
+  /**
+   * First solid surface along a ray, from the baked map geometry. Double sided,
+   * so a shot that starts inside geometry still stops there.
+   */
+  traceShot(origin, direction, far) {
+    return this.collision.raycast(origin, direction, far);
+  }
+
+  /** True when the map has geometry between the two points. */
+  traceWorldSegment(origin, target) {
+    const direction = target.clone().sub(origin);
+    const distance = direction.length();
+    if (distance < 0.02) return null;
+    return this.collision.raycast(origin, direction, distance);
   }
 
   getDynamicHitMeshes(excludeActor = null) {
@@ -716,19 +783,30 @@ export class ArenaMap {
     const direction = new THREE.Vector3().subVectors(target, origin);
     const distance = direction.length();
     if (distance < 0.01) return true;
-    this.raycaster.set(origin, direction.normalize());
-    this.raycaster.far = distance - 0.12;
-    const hits = this.raycaster.intersectObjects([...this.raycastTargets, ...extraTargets], false);
-    return hits.length === 0;
+    // A small inset keeps an eye sitting inside cover geometry from blocking itself.
+    const inset = Math.max(0.12, distance * 0.01);
+    if (this.collision.raycast(origin, direction, distance - inset)) return false;
+    if (extraTargets.length) {
+      this.raycaster.set(origin, direction.normalize());
+      this.raycaster.far = distance - inset;
+      return this.raycaster.intersectObjects(extraTargets, false).length === 0;
+    }
+    return true;
   }
 
   raycastSegment(origin, target, extraTargets = []) {
     const direction = new THREE.Vector3().subVectors(target, origin);
     const distance = direction.length();
     if (distance < 0.01) return null;
-    this.raycaster.set(origin, direction.normalize());
-    this.raycaster.far = distance;
-    return this.raycaster.intersectObjects([...this.raycastTargets, ...extraTargets], false)[0] ?? null;
+    const world = this.collision.raycast(origin, direction, distance);
+    let best = world ? { point: world.point, normal: world.normal, distance: world.distance, object: null } : null;
+    if (extraTargets.length) {
+      this.raycaster.set(origin, direction.normalize());
+      this.raycaster.far = distance;
+      const hit = this.raycaster.intersectObjects(extraTargets, false)[0] ?? null;
+      if (hit && (!best || hit.distance < best.distance)) best = hit;
+    }
+    return best;
   }
 
   findCoverPosition(origin, threat, navigation = this.navigation) {
@@ -752,21 +830,26 @@ export class ArenaMap {
 
       const reach = Math.max(collider.size.x, collider.size.z) * 0.5;
       const base = collider.center.clone().addScaledVector(towardCover, reach + 1.25);
-      base.y = 0.08;
+      // Stand on the real surface rather than an assumed flat plane, otherwise
+      // cover points end up buried in or floating over the ground.
+      const baseGround = this.collision.groundHeight(base.x, base.z, 0.5, base.y + 1.5, 4);
+      base.y = (Number.isFinite(baseGround) ? baseGround : this.floorY) + 0.04;
       const tangent = new THREE.Vector3(-towardCover.z, 0, towardCover.x);
       const peekA = base.clone().addScaledVector(tangent, 1.75);
       const peekB = base.clone().addScaledVector(tangent, -1.75);
-      peekA.y = 0.08;
-      peekB.y = 0.08;
+      for (const peek of [peekA, peekB]) {
+        const peekGround = this.collision.groundHeight(peek.x, peek.z, 0.5, peek.y + 1.5, 4);
+        peek.y = (Number.isFinite(peekGround) ? peekGround : this.floorY) + 0.04;
+      }
       const threatPoint = threat.clone().add(new THREE.Vector3(0, 1.1, 0));
       if (this.isSegmentClear(base.clone().add(new THREE.Vector3(0, 1.2, 0)), threatPoint)) continue;
       if (navigation && !navigation.isWalkablePoint(base)) continue;
-      if (!this.canPlayerOccupy(base, 0.5, 1.85)) continue;
+      if (!this.canPlayerOccupy(base, 0.5, 1.85, null, 0.4)) continue;
       if (navigation && navigation.findPath(origin, base).length === 0
         && origin.distanceTo(base) > 1.2) continue;
       const peekCandidates = [peekA, peekB].filter((candidate) => (
         (!navigation || navigation.isWalkablePoint(candidate))
-        && this.canPlayerOccupy(candidate, 0.5, 1.85)
+        && this.canPlayerOccupy(candidate, 0.5, 1.85, null, 0.4)
         && this.isSegmentClear(candidate.clone().add(new THREE.Vector3(0, 1.45, 0)), threatPoint)
       ));
       if (!peekCandidates.length) continue;

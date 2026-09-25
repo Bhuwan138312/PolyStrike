@@ -89,9 +89,10 @@ export class ShellEjectionSystem {
       const nextPosition = shell.mesh.position.clone().addScaledVector(shell.velocity, delta);
       const ground = this.arena.getGroundHeight(
         shell.mesh.position,
-        0.035,
+        0.04,
         shell.mesh.position.y,
         nextPosition.y,
+        Math.max(3, Math.abs(shell.velocity.y) * delta + 0.5),
       );
 
       if (nextPosition.y <= ground + 0.018 && shell.velocity.y < 0) {

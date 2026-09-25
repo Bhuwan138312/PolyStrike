@@ -4,7 +4,10 @@ import { GAME_CONFIG } from '../config.js';
 const HALF_SIZE = GAME_CONFIG.arenaHalfSize - 1;
 const CELL_SIZE = 1.25;
 const GRID_SIZE = Math.ceil((HALF_SIZE * 2) / CELL_SIZE) + 1;
-const AGENT_RADIUS = 0.57;
+const AGENT_RADIUS = 0.5;
+const AGENT_HEIGHT = 1.8;
+// Only surfaces the body could actually stand on count as ground.
+const GROUND_SEARCH_HEIGHT = 3.2;
 
 export class NavigationGrid {
   constructor(arena) {
@@ -14,16 +17,57 @@ export class NavigationGrid {
     this.halfSize = HALF_SIZE;
     this.blocked = new Uint8Array(GRID_SIZE * GRID_SIZE);
     this.reachable = new Uint8Array(GRID_SIZE * GRID_SIZE);
+    this.groundY = new Float32Array(GRID_SIZE * GRID_SIZE);
     this.build();
     arena.setNavigation(this);
   }
 
-  build() {
+  build(arena = this.arena) {
+    if (arena) this.arena = arena;
     this.blocked.fill(0);
     this.reachable.fill(0);
-    for (const collider of this.arena.colliders) {
+    this.groundY.fill(0);
+
+    const collision = this.arena?.collision;
+    const floorY = this.arena?.floorY ?? 0;
+
+    for (let cz = 0; cz < this.size; cz += 1) {
+      for (let cx = 0; cx < this.size; cx += 1) {
+        const world = this.cellToWorld(cx, cz, this._scratch ?? (this._scratch = new THREE.Vector3()));
+        const index = this.index(cx, cz);
+        let ground = floorY;
+
+        if (collision?.ready) {
+          const found = collision.groundHeight(world.x, world.z, AGENT_RADIUS, floorY + GROUND_SEARCH_HEIGHT, GROUND_SEARCH_HEIGHT + 2);
+          if (!Number.isFinite(found) || found > floorY + GROUND_SEARCH_HEIGHT) {
+            this.blocked[index] = 1;
+            continue;
+          }
+          ground = found;
+          // A body standing here must fit, and must not be walled in.
+          if (collision.overlapsCylinder(world.x, world.z, ground, ground + AGENT_HEIGHT, AGENT_RADIUS, 0.25)) {
+            this.blocked[index] = 1;
+            continue;
+          }
+        }
+
+        this.groundY[index] = ground;
+        this.blocked[index] = 0;
+      }
+    }
+
+    this.applyColliderObstructions();
+    this.buildReachableComponent();
+  }
+
+  /**
+   * Adds the hand placed AABB props (crates, barriers, procedural cover) on top
+   * of the triangle accurate pass.
+   */
+  applyColliderObstructions() {
+    for (const collider of this.arena?.colliders ?? []) {
       if (collider.isTerrain) continue;
-      if (collider.min.y >= 2.25 || collider.max.y <= 0.36) continue;
+      if (collider.min.y >= 2.1 || collider.max.y <= 0.4) continue;
       const minX = this.worldToCell(collider.min.x - AGENT_RADIUS);
       const maxX = this.worldToCell(collider.max.x + AGENT_RADIUS);
       const minZ = this.worldToCell(collider.min.z - AGENT_RADIUS);
@@ -35,8 +79,13 @@ export class NavigationGrid {
         }
       }
     }
+  }
 
-    this.buildReachableComponent();
+  /** Ground height sampled when the grid was built. */
+  getGroundAt(x, z) {
+    const cell = this.index(this.worldToCell(x), this.worldToCell(z));
+    const value = this.groundY[cell];
+    return value === 0 ? (this.arena?.floorY ?? 0) : value;
   }
 
   buildReachableComponent() {
@@ -90,9 +139,11 @@ export class NavigationGrid {
   }
 
   cellToWorld(x, z, target = new THREE.Vector3()) {
+    const sampled = this.groundY[this.index(x, z)];
+    const floor = this.arena?.floorY ?? 0;
     return target.set(
       -this.halfSize + (x + 0.5) * this.cellSize,
-      0.08,
+      (sampled === 0 ? floor : sampled) + 0.08,
       -this.halfSize + (z + 0.5) * this.cellSize,
     );
   }

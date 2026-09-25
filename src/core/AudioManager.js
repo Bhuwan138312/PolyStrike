@@ -34,7 +34,7 @@ export class AudioManager {
     this.noiseBuffer = this.context.createBuffer(1, length, this.context.sampleRate);
     const data = this.noiseBuffer.getChannelData(0);
     for (let i = 0; i < length; i += 1) data[i] = Math.random() * 2 - 1;
-    
+
     this.m4Buffer = null;
     this.glockBuffer = null;
     this.m4ReloadBuffer = null;
@@ -43,7 +43,7 @@ export class AudioManager {
     this.useFoot1 = true;
     this.jumpBuffer = null;
     this.loadCustomSounds();
-    
+
     return true;
   }
 
@@ -57,7 +57,7 @@ export class AudioManager {
     }
 
     try {
-      const responseGlock = await fetch('/sounds/handgun.mp3');
+      const responseGlock = await fetch('/sounds/GLOCKSOUND.mp3');
       const arrayBufferGlock = await responseGlock.arrayBuffer();
       this.glockBuffer = await this.context.decodeAudioData(arrayBufferGlock);
     } catch (e) {
@@ -260,20 +260,20 @@ export class AudioManager {
       source.start(now);
       return;
     }
-    
+
     // 1. The Main "Crack" (Broad spectrum noise)
     const crackSource = this.context.createBufferSource();
     crackSource.buffer = this.noiseBuffer;
-    
+
     const crackFilter = this.context.createBiquadFilter();
     crackFilter.type = 'bandpass';
     crackFilter.frequency.setValueAtTime(1500, now);
     crackFilter.Q.setValueAtTime(0.5, now);
-    
+
     const crackEnv = this.context.createGain();
     crackEnv.gain.setValueAtTime(1.5 * strength * pannerGainValue, now);
     crackEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-    
+
     crackSource.connect(crackFilter).connect(crackEnv).connect(destination);
     crackSource.start(now, Math.random() * 0.3);
     crackSource.stop(now + 0.15);
@@ -281,15 +281,15 @@ export class AudioManager {
     // 2. The High-Frequency "Snap" (Mechanical metallic sound)
     const snapSource = this.context.createBufferSource();
     snapSource.buffer = this.noiseBuffer;
-    
+
     const snapFilter = this.context.createBiquadFilter();
     snapFilter.type = 'highpass';
     snapFilter.frequency.setValueAtTime(3000, now);
-    
+
     const snapEnv = this.context.createGain();
     snapEnv.gain.setValueAtTime(1.0 * strength * pannerGainValue, now);
     snapEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-    
+
     snapSource.connect(snapFilter).connect(snapEnv).connect(destination);
     snapSource.start(now, Math.random() * 0.3);
     snapSource.stop(now + 0.06);
@@ -297,31 +297,31 @@ export class AudioManager {
     // 3. The Cinematic "Thump" (Massive Sub-Bass)
     const thumpOsc = this.context.createOscillator();
     thumpOsc.type = 'sine'; // Smooth bass
-    
+
     const thumpEnv = this.context.createGain();
     thumpOsc.frequency.setValueAtTime(180, now);
     thumpOsc.frequency.exponentialRampToValueAtTime(30, now + 0.12); // Sweeps down fast
-    
+
     thumpEnv.gain.setValueAtTime(1.5 * strength * pannerGainValue, now); // Very loud bass
     thumpEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-    
+
     thumpOsc.connect(thumpEnv).connect(destination);
     thumpOsc.start(now);
     thumpOsc.stop(now + 0.16);
-    
+
     // 4. The "Tail" (Simulated environmental reverb/echo)
     const tailSource = this.context.createBufferSource();
     tailSource.buffer = this.noiseBuffer;
-    
+
     const tailFilter = this.context.createBiquadFilter();
     tailFilter.type = 'lowpass';
     tailFilter.frequency.setValueAtTime(1200, now);
     tailFilter.frequency.linearRampToValueAtTime(100, now + 0.35);
-    
+
     const tailEnv = this.context.createGain();
     tailEnv.gain.setValueAtTime(0.4 * strength * pannerGainValue, now);
     tailEnv.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-    
+
     tailSource.connect(tailFilter).connect(tailEnv).connect(destination);
     tailSource.start(now, Math.random() * 0.3);
     tailSource.stop(now + 0.45);
@@ -334,22 +334,22 @@ export class AudioManager {
       const source = this.context.createBufferSource();
       source.buffer = this.glockBuffer;
       const gain = this.context.createGain();
-      gain.gain.value = 0.5 * strength * pannerGainValue; // Lower volume but natural EQ
+      gain.gain.value = 0.3 * strength * pannerGainValue; // Reduced volume by 15%
       source.connect(gain).connect(destination);
       source.start(now);
       return;
     }
-    
+
     // Glock: Punchy, blunt, less high-frequency ringing
     const lowpass = this.context.createBiquadFilter();
     lowpass.type = 'lowpass';
     lowpass.frequency.setValueAtTime(2000, now);
     lowpass.frequency.exponentialRampToValueAtTime(300, now + 0.08);
-    
+
     const envelope = this.context.createGain();
     envelope.gain.setValueAtTime(0.35 * strength * pannerGainValue, now);
     envelope.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
-    
+
     source.connect(lowpass).connect(envelope).connect(destination);
     source.start(now, Math.random() * 0.3);
     source.stop(now + 0.11);
@@ -415,7 +415,7 @@ export class AudioManager {
   footstep(destination, now, options = {}) {
     if (now - this.lastFootstep < 0.16) return;
     this.lastFootstep = now;
-    
+
     // Choose alternating buffer
     const buffer = this.useFoot1 ? this.foot1Buffer : this.foot2Buffer;
     this.useFoot1 = !this.useFoot1; // toggle for next step
@@ -426,16 +426,16 @@ export class AudioManager {
       const gain = this.context.createGain();
       // Speed up audio when running to match the faster strides
       const speed = options.speed || 5.2;
-      
+
       // Smooth blend factor between walking (5.2) and sprinting (8.0)
       const blend = Math.max(0, Math.min(1, (speed - 5.2) / (8.0 - 5.2)));
-      
+
       // Increase walking sound speed slightly more (1.25x) and transition smoothly to sprint speed (1.5x)
       source.playbackRate.value = 1.25 + (1.50 - 1.25) * blend;
 
       // Dynamically adjust volume: softer when walking, louder when running for a natural transition
       gain.gain.value = (0.7 + 0.3 * blend) * pannerGain(destination);
-      
+
       source.connect(gain).connect(destination);
       source.start(now);
     } else {

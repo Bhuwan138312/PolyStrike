@@ -28,17 +28,11 @@ export class BotSpawner {
           if (pt.distanceTo(playerSpawn) > 4) {
             const tooClose = spawnPoints.some(s => s.distanceTo(pt) < 1.5);
             if (!tooClose) {
-              this.arena.raycaster.set(new THREE.Vector3(pt.x, 100, pt.z), new THREE.Vector3(0, -1, 0));
-              const hits = this.arena.raycaster.intersectObjects(this.arena.raycastTargets, false);
-              if (hits.length > 0) {
-                let lowestY = Infinity;
-                for (const hit of hits) {
-                  if (hit.point.y < lowestY) lowestY = hit.point.y;
-                }
-                pt.y = lowestY + 0.08;
+              const snapped = this.arena.groundSnap(pt, 0.45, 1.85);
+              if (snapped) {
+                spawn = snapped;
+                break;
               }
-              spawn = pt;
-              break;
             }
           }
         }

@@ -203,6 +203,7 @@ export class Game {
     this.ui.setHealth(this.player.health.current, this.player.health.maxHealth);
     this.ui.setAmmo(this.activeWeapon.magazine, this.activeWeapon.reserve, false, 0, this.activeWeapon.config);
     this.ui.setEnemies(this.spawner.getAlive());
+    this.ui.setActiveWeaponIcon(this.activeWeaponIndex);
     this.ui.showHud();
     this.state = 'PLAYING';
     this.input.clear();
@@ -241,6 +242,7 @@ export class Game {
         this.player.weapon = this.activeWeapon;
         this.activeWeapon.model.visible = true;
         this.ui.setAmmo(this.activeWeapon.magazine, this.activeWeapon.reserve, this.activeWeapon.reloading, this.activeWeapon.reloadElapsed, this.activeWeapon.config);
+        this.ui.setActiveWeaponIcon(this.activeWeaponIndex);
 
         this.switchPhase = 'up';
         this.switchElapsed = 0;
