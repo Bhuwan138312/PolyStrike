@@ -32,6 +32,8 @@ export class UIManager {
     this.moveState = document.querySelector('#move-state');
     this.sensitivity = document.querySelector('#sensitivity');
     this.sensitivityValue = document.querySelector('#sensitivity-value');
+    this.controlsOverlay = document.querySelector('#controls-overlay');
+    this.fpsCounter = document.querySelector('#fps-counter');
     this.difficulty = 'normal';
     this.callbacks = {};
     this.hitMarkerTimer = 0;
@@ -80,6 +82,12 @@ export class UIManager {
       const value = Number(this.sensitivity.value);
       this.sensitivityValue.value = value.toFixed(1);
       this.callbacks.setSensitivity?.(value);
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyH' && !e.repeat) {
+        this.controlsOverlay?.classList.toggle('is-hidden');
+      }
     });
   }
 
@@ -150,6 +158,10 @@ export class UIManager {
 
   setDamageFlash(amount) {
     this.damageVignette.style.opacity = String(Math.min(1, amount));
+  }
+
+  setFPS(fps) {
+    if (this.fpsCounter) this.fpsCounter.textContent = Math.round(fps);
   }
 
   setCaptureHint(visible) {

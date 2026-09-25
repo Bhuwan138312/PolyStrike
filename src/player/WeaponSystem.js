@@ -422,7 +422,9 @@ export class WeaponSystem {
 
     const fireAttempted = this.input.firing && (this.fireMode === 'auto' || !this.fireWasPressed);
     if (fireAttempted) {
-      this.tryFire();
+      if (this.magazine > 0 || !this.fireWasPressed) {
+        this.tryFire();
+      }
     }
     this.fireWasPressed = this.input.firing;
 

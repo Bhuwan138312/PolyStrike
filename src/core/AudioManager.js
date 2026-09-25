@@ -42,6 +42,7 @@ export class AudioManager {
     this.foot2Buffer = null;
     this.useFoot1 = true;
     this.jumpBuffer = null;
+    this.emptyShotBuffer = null;
     this.loadCustomSounds();
 
     return true;
@@ -103,6 +104,14 @@ export class AudioManager {
     } catch (e) {
       console.warn('Failed to load jump sound', e);
     }
+
+    try {
+      const responseEmpty = await fetch('/sounds/emptyshot.mp3');
+      const arrayBufferEmpty = await responseEmpty.arrayBuffer();
+      this.emptyShotBuffer = await this.context.decodeAudioData(arrayBufferEmpty);
+    } catch (e) {
+      console.warn('Failed to load empty shot sound', e);
+    }
   }
 
   setVolume(value) {
@@ -145,7 +154,7 @@ export class AudioManager {
       panner = null;
     }
     const destination = panner || this.master;
-    const now = this.context.currentTime;
+    const now = this.context.currentTime + (options.delay || 0);
     const settings = {
       gunshot: () => this.gunshot(destination, now, 1, 130),
       m4_shot: () => this.m4_shot(destination, now, 1.2),
@@ -154,7 +163,7 @@ export class AudioManager {
       reload: () => this.reload(destination, now),
       reload_pistol: () => this.reload_pistol(destination, now),
       reload_m4: () => this.reload_m4(destination, now),
-      dry: () => this.click(destination, now, 920, 0.035, 0.055),
+      dry: () => this.dry(destination, now),
       hit: () => this.tone(destination, now, 480, 260, 0.055, 0.075, 'square'),
       headshot: () => this.tone(destination, now, 860, 420, 0.07, 0.09, 'square'),
       damage: () => this.damage(destination, now),
@@ -395,6 +404,19 @@ export class AudioManager {
       source.start(now);
     } else {
       this.reload(destination, now);
+    }
+  }
+
+  dry(destination, now) {
+    if (this.emptyShotBuffer) {
+      const source = this.context.createBufferSource();
+      source.buffer = this.emptyShotBuffer;
+      const gain = this.context.createGain();
+      gain.gain.value = 0.3 * pannerGain(destination); // Reduced volume by 40%
+      source.connect(gain).connect(destination);
+      source.start(now);
+    } else {
+      this.click(destination, now, 920, 0.035, 0.055);
     }
   }
 

@@ -476,9 +476,21 @@ export class Game {
   }
 
   bindLoop() {
+    let frames = 0;
+    let lastTime = performance.now();
+
     const frame = () => {
       const delta = Math.min(this.clock.getDelta(), 0.04);
       this.elapsed += delta;
+
+      const now = performance.now();
+      frames++;
+      if (now >= lastTime + 1000) {
+        this.ui.setFPS(frames * 1000 / (now - lastTime));
+        frames = 0;
+        lastTime = now;
+      }
+
       if (this.state === 'MENU' || this.state === 'QUIT') this.updateMenuCamera(delta);
       if (this.state === 'PLAYING') this.updateMatch(delta);
 

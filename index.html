@@ -53,6 +53,20 @@
           <div class="reload-copy" id="reload-copy">R&nbsp;&nbsp;RELOAD</div>
         </div>
 
+        <div id="controls-overlay" class="controls-overlay">
+          <div class="controls-list">
+            <div><kbd>WASD</kbd><span>MOVE</span></div>
+            <div><kbd>MOUSE</kbd><span>AIM</span></div>
+            <div><kbd>LMB</kbd><span>FIRE</span></div>
+            <div><kbd>RMB</kbd><span>ADS</span></div>
+            <div><kbd>R</kbd><span>RELOAD</span></div>
+            <div><kbd>SPACE</kbd><span>JUMP</span></div>
+            <div><kbd>SHIFT</kbd><span>SPRINT</span></div>
+            <div><kbd>B</kbd><span>FIRE MODE</span></div>
+            <div><kbd>H</kbd><span>TOGGLE GUIDE</span></div>
+          </div>
+        </div>
+
         <div id="crosshair" class="crosshair" aria-hidden="true">
           <i class="ch-top"></i><i class="ch-right"></i><i class="ch-bottom"></i><i class="ch-left"></i><i class="ch-dot"></i>
         </div>
@@ -169,7 +183,7 @@
         </div>
       </section>
 
-      <div class="corner-brand">LPS<span>//</span>FPS</div>
+      <div class="corner-brand">LPS<span class="slash">//</span><span id="fps-counter">0</span> FPS</div>
     </main>
     <noscript>This game requires JavaScript and WebGL.</noscript>
     <script type="module" src="/src/main.js"></script>
