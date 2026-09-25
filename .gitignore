@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.vite/
+*.log
+*.crdownload
+Unconfirmed*
+.DS_Store

@@ -1,0 +1,19 @@
+{
+  "name": "low-poly-strike",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A procedural low-poly arena FPS built with Three.js.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.180.0",
+    "three-mesh-bvh": "^0.9.15"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0"
+  }
+}
