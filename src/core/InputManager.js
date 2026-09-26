@@ -26,6 +26,8 @@ export class InputManager {
     this.onBlur = null;
     this.onScrollUp = null;
     this.onScrollDown = null;
+    this.onKeyE = null;
+    this.onKeyQ = null;
 
     this.handleKeyDown = this.handleKeyDown.bind(this);
     this.handleKeyUp = this.handleKeyUp.bind(this);
@@ -62,6 +64,9 @@ export class InputManager {
     if (event.code === 'Escape' && !event.repeat) this.onEscape?.();
     if (event.code === 'Digit1' && !event.repeat) this.onDigit1?.();
     if (event.code === 'Digit2' && !event.repeat) this.onDigit2?.();
+    if (event.code === 'Digit3' && !event.repeat) this.onDigit3?.();
+    if (event.code === 'KeyE' && !event.repeat) this.onKeyE?.();
+    if (event.code === 'KeyQ' && !event.repeat) this.onKeyQ?.();
   }
 
   handleWheel(event) {

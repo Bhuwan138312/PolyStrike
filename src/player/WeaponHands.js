@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 
-const RIGHT_GRIP_NAMES = ['ddmk18_grip_16', 'ak200_grip_13', 'RightGrip'];
-const SUPPORT_GRIP_NAMES = ['ddmk18_handguard_15', 'ak200_handguard_11', 'SupportGrip'];
+const RIGHT_GRIP_NAMES = ['ddmk18_grip_16', 'ak200_grip_13', 'RightGrip', 'Pistol_Grip', 'PistolGrip'];
+const SUPPORT_GRIP_NAMES = ['ddmk18_handguard_15', 'ak200_handguard_11', 'SupportGrip', 'Handguard_Railed', 'handguard', 'Handguard'];
 
 export class WeaponHands {
-  constructor({ model, asset, isPistol = false }) {
+  constructor({ model, asset, isPistol = false, handAnchors = null, fallbackHandsSource = null }) {
     this.model = model;
     this.asset = asset;
     this.isPistol = isPistol;
+    this.handAnchors = handAnchors;
+    this.fallbackHandsSource = fallbackHandsSource;
     this.group = null;
     this.rightHand = null;
     this.leftHand = null;
@@ -19,16 +21,29 @@ export class WeaponHands {
     const rightAnchor = this.findAnchor(RIGHT_GRIP_NAMES);
     const supportAnchor = this.findAnchor(SUPPORT_GRIP_NAMES);
 
-    // Fallback anchors if we don't find them in the GLB
-    const rightPosition = rightAnchor
-      ? this.model.worldToLocal(rightAnchor.getWorldPosition(new THREE.Vector3()))
-      : new THREE.Vector3(0.015, -0.05, 0.12);
+    // Explicit anchors win, then a grip/handguard node from the GLB, then the
+    // generic fallback. Models that ship their weapon as one merged mesh have no
+    // per-part nodes to hang the fists off, so those pass handAnchors instead.
+    const rightPosition = this.handAnchors?.right?.clone()
+      ?? (rightAnchor
+        ? this.anchorPoint(rightAnchor)
+        : new THREE.Vector3(0.015, -0.05, 0.12));
 
-    const supportPosition = supportAnchor
-      ? this.model.worldToLocal(supportAnchor.getWorldPosition(new THREE.Vector3()))
-      : (this.isPistol
-        ? new THREE.Vector3(-0.015, -0.05, 0.12) // Perfectly symmetrical to right hand
-        : new THREE.Vector3(-0.03, -0.02, -0.15));
+    // createBlockyArm offsets the support fist down and inboard from its anchor,
+    // so an explicit support anchor has to allow for that to land on the part.
+    const supportPosition = this.handAnchors?.support?.clone()
+      ?? (supportAnchor
+        ? this.anchorPoint(supportAnchor)
+        : (this.isPistol
+          ? new THREE.Vector3(-0.015, -0.05, 0.12) // Perfectly symmetrical to right hand
+          : new THREE.Vector3(-0.03, -0.02, -0.15)));
+
+    if (this.handAnchors?.support) {
+      // Undo the generic support drop/inboard so the given value is where the
+      // fist itself ends up rather than where its anchor sits.
+      supportPosition.x += 0.04;
+      supportPosition.y += 0.11;
+    }
 
     this.group = new THREE.Group();
     this.group.name = 'FirstPersonHands';
@@ -105,6 +120,23 @@ export class WeaponHands {
       if (object) return object;
     }
     return null;
+  }
+
+  // Resolves an anchor node to the model-local point the fist should sit on.
+  // Marker nodes (empty transforms) are already authored at that point, but some
+  // models share a single pivot across every part, so when the anchor actually
+  // carries geometry we use the centre of that mesh instead of its node origin.
+  anchorPoint(anchor) {
+    let worldPosition;
+    if (anchor.isMesh) {
+      const bounds = new THREE.Box3().setFromObject(anchor);
+      worldPosition = bounds.isEmpty()
+        ? anchor.getWorldPosition(new THREE.Vector3())
+        : bounds.getCenter(new THREE.Vector3());
+    } else {
+      worldPosition = anchor.getWorldPosition(new THREE.Vector3());
+    }
+    return this.model.worldToLocal(worldPosition);
   }
 
   createBlockyArm(name, anchor, isSupport) {

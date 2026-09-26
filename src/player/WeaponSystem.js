@@ -6,7 +6,7 @@ import { WeaponProjectileSystem } from './WeaponProjectileSystem.js';
 import { ShellEjectionSystem } from './ShellEjectionSystem.js';
 import { WeaponHands } from './WeaponHands.js';
 export class WeaponSystem {
-  constructor({ scene, camera, player, arena, effects, audio, config, modelUrl, displayName, targetLength = 1.25, viewScale = 1.3, callbacks = {}, basePosition = new THREE.Vector3(0.18, -0.32, -0.48) }) {
+  constructor({ scene, camera, player, arena, effects, audio, config, modelUrl, displayName, targetLength = 1.25, viewScale = 1.3, callbacks = {}, basePosition = new THREE.Vector3(0.18, -0.32, -0.48), modelRotationX = 0, modelRotationY = Math.PI / 2, modelRotationZ = 0, modelOffset = new THREE.Vector3(0, 0, 0), boltTravelOverride = null, fallbackTemplatesSource = null }) {
     this.scene = scene;
     this.camera = camera;
     this.player = player;
@@ -19,6 +19,18 @@ export class WeaponSystem {
     this.displayName = displayName;
     this.targetLength = targetLength;
     this.viewScale = viewScale;
+    this.modelRotationX = modelRotationX;
+    this.modelRotationY = modelRotationY;
+    this.modelRotationZ = modelRotationZ;
+    this.modelOffset = modelOffset;
+    this.boltTravelOverride = boltTravelOverride;
+    this.suppressorEnabled = false;
+    this.suppressorParts = [];
+    this.altViewEnabled = false;
+    this.defaultBasePosition = basePosition.clone();
+    this.altBasePosition = new THREE.Vector3(0.12, -0.24, -0.42); // Pulled backward (closer to camera)
+    this.targetBasePosition = basePosition.clone();
+    this.fallbackTemplatesSource = fallbackTemplatesSource;
     this.input = player.input;
     this.magazine = this.config.magazineSize;
     this.reserve = this.config.reserveSize;
@@ -35,7 +47,10 @@ export class WeaponSystem {
     // Krunker-style: muzzle faces crosshair, natural slant from Z-tilt, offset right
     this.basePosition = basePosition;
     this.adsPosition = new THREE.Vector3(0, -0.19, -0.42);
-    this.baseRotation = new THREE.Euler(0.04, -0.02, 0.12);
+    this.baseRotation = new THREE.Euler(0.0, 0.0, 0.0);
+    this.defaultBaseRotation = this.baseRotation.clone();
+    this.altBaseRotation = new THREE.Euler(0.0, 0.0, 0.0);
+    this.targetBaseRotation = this.baseRotation.clone();
     this.adsRotation = new THREE.Euler(0.0, 0, 0);
     this.aimRaycaster = new THREE.Raycaster();
     this.aimRaycaster.near = 0;
@@ -204,20 +219,42 @@ export class WeaponSystem {
   }
 
   installConfiguredModel(asset) {
-    asset.rotation.y = Math.PI / 2;
+    asset.rotation.x = this.modelRotationX;
+    asset.rotation.y = this.modelRotationY;
+    asset.rotation.z = this.modelRotationZ;
     asset.updateMatrixWorld(true);
 
-    const bounds = new THREE.Box3().setFromObject(asset);
-    const size = bounds.getSize(new THREE.Vector3());
-    const longSide = Math.max(size.x, size.z);
-    const scale = this.targetLength / Math.max(longSide, 0.001);
-    asset.scale.setScalar(scale);
-    asset.updateMatrixWorld(true);
+    if (this.targetLength) {
+      const bounds = new THREE.Box3().setFromObject(asset);
+      const size = bounds.getSize(new THREE.Vector3());
+      const longSide = Math.max(size.x, size.z);
+      const scale = this.targetLength / Math.max(longSide, 0.001);
+      asset.scale.setScalar(scale);
+      asset.updateMatrixWorld(true);
 
-    const scaledBounds = new THREE.Box3().setFromObject(asset);
-    const center = scaledBounds.getCenter(new THREE.Vector3());
-    asset.position.sub(center);
-    asset.updateMatrixWorld(true);
+      const scaledBounds = new THREE.Box3().setFromObject(asset);
+      const center = scaledBounds.getCenter(new THREE.Vector3());
+      asset.position.sub(center).add(this.modelOffset);
+      asset.updateMatrixWorld(true);
+    }
+
+    if (this.displayName === 'SCAR') {
+      // Hide the vertical foregrip attachment on the mesh
+      const foregrip = asset.getObjectByName('Grip');
+      if (foregrip) foregrip.visible = false;
+
+      // Save references to suppressor parts
+      this.suppressorParts = [];
+      const suppressorNames = ['Supressor', 'Suppressor_Knotch', 'Suppressor_Notch'];
+      for (const name of suppressorNames) {
+        const part = asset.getObjectByName(name);
+        if (part) {
+          part.visible = this.suppressorEnabled;
+          this.suppressorParts.push(part);
+        }
+      }
+      this.suppressorPoint = asset.getObjectByName('Supressorpoint');
+    }
 
     this.model.clear();
     this.model.name = this.displayName;
@@ -226,8 +263,21 @@ export class WeaponSystem {
       model: this.model,
       asset,
       mechanics: this.config.mechanics,
+      boltTravelOverride: this.boltTravelOverride,
     });
     this.referenceAudit = this.weaponRig.referenceAudit;
+
+    if (this.fallbackTemplatesSource && this.fallbackTemplatesSource.weaponRig) {
+      if (!this.weaponRig.references.bulletTemplate && this.fallbackTemplatesSource.weaponRig.references.bulletTemplate) {
+        this.weaponRig.references.bulletTemplate = this.fallbackTemplatesSource.weaponRig.references.bulletTemplate;
+        this.weaponRig.templateWorldScales.set(this.weaponRig.references.bulletTemplate, this.fallbackTemplatesSource.weaponRig.getTemplateWorldScale(this.weaponRig.references.bulletTemplate));
+      }
+      if (!this.weaponRig.references.shellTemplate && this.fallbackTemplatesSource.weaponRig.references.shellTemplate) {
+        this.weaponRig.references.shellTemplate = this.fallbackTemplatesSource.weaponRig.references.shellTemplate;
+        this.weaponRig.templateWorldScales.set(this.weaponRig.references.shellTemplate, this.fallbackTemplatesSource.weaponRig.getTemplateWorldScale(this.weaponRig.references.shellTemplate));
+      }
+    }
+
     this.projectiles.setTemplate(
       this.weaponRig.references.bulletTemplate,
       this.weaponRig.getTemplateWorldScale(this.weaponRig.references.bulletTemplate),
@@ -265,7 +315,13 @@ export class WeaponSystem {
     this.model.add(this.flash);
 
     // Add Krunker-style blocky hands
-    this.hands = new WeaponHands({ model: this.model, asset, isPistol: this.targetLength < 0.5 });
+    this.hands = new WeaponHands({
+      model: this.model,
+      asset,
+      isPistol: this.targetLength < 0.5,
+      displayName: this.displayName,
+      fallbackHandsSource: this.fallbackTemplatesSource?.hands
+    });
 
     // Wire magazine drop callback for physics throw
     if (this.weaponRig) {
@@ -324,6 +380,14 @@ export class WeaponSystem {
     this.fireCooldown -= delta;
     this.dryCooldown -= delta;
     this.flashTimer -= delta;
+
+    // Smoothly transition base position and rotation for alt view toggle
+    const viewLerp = 1 - Math.exp(-12 * delta);
+    this.basePosition.lerp(this.targetBasePosition, viewLerp);
+    this.baseRotation.x = THREE.MathUtils.lerp(this.baseRotation.x, this.targetBaseRotation.x, viewLerp);
+    this.baseRotation.y = THREE.MathUtils.lerp(this.baseRotation.y, this.targetBaseRotation.y, viewLerp);
+    this.baseRotation.z = THREE.MathUtils.lerp(this.baseRotation.z, this.targetBaseRotation.z, viewLerp);
+
     // Krunker-style: fast snap-back recoil recovery
     this.weaponKick *= Math.exp(-22 * delta);
     this.adsAmount = THREE.MathUtils.clamp(this.player.adsAmount, 0, 1);
@@ -379,10 +443,10 @@ export class WeaponSystem {
       + lookSwayX * 0.005) * reloadSwayBoost;
     const bob = (Math.sin(this.player.bobDistance * 2.25) * 0.002 * movementFactor * adsSway
       - lookSwayY * 0.004) * reloadSwayBoost;
-    // Running tilt: subtle left-right roll synced to stride, suppressed during ADS
-    const runTilt = Math.sin(this.player.bobDistance * 1.125) * 0.025 * movementFactor * adsSway;
-    // Running yaw pivot: barrel swings out more, stock stays near center (natural carry)
-    const runYaw = Math.sin(this.player.bobDistance * 1.125) * 0.035 * movementFactor * adsSway;
+    // Running pitch pivot: barrel swings up and down
+    const runTilt = 0;
+    const runYaw = 0;
+    const runPitch = Math.sin(this.player.bobDistance * 1.125) * 0.02 * movementFactor * adsSway;
 
     // Sprint carry: gun rotates into an angled hold while running, swings from that offset
     const isPistol = this.displayName === 'Pistol';
@@ -391,8 +455,8 @@ export class WeaponSystem {
     const carrySpeed = this.input.firing ? 25 : 8;
     this.sprintCarryAmount = THREE.MathUtils.lerp(this.sprintCarryAmount, sprintTarget, 1 - Math.exp(-carrySpeed * delta));
     const sprintBlend = this.sprintCarryAmount;
-    const carryYaw = sprintBlend * 0.12;      // rotate barrel left ~7° while running
-    const carryPitch = sprintBlend * -0.04;   // tip barrel down slightly
+    const carryYaw = 0;
+    const carryPitch = 0;
     const carryOffsetX = sprintBlend * 0.015; // shift slightly right
     const carryOffsetY = sprintBlend * -0.01; // drop slightly lower
 
@@ -401,8 +465,13 @@ export class WeaponSystem {
     const kickScale = 1.0;
     const kickBackMultiplier = isPistol ? 0.12 : 0.18;   // less backward push for pistol
     const kickUpMultiplier = isPistol ? 0.38 : 0.22;     // more upward barrel tip for pistol
+
+    // Angle the gun outward when suppressor is equipped to manage its visual length
+    const suppressorYaw = this.suppressorEnabled ? THREE.MathUtils.lerp(-0.05, 0, this.adsAmount) : 0;
+    const suppressorOffsetX = this.suppressorEnabled ? THREE.MathUtils.lerp(0.015, 0, this.adsAmount) : 0;
+
     this.weaponHolder.position.set(
-      THREE.MathUtils.lerp(this.basePosition.x, this.adsPosition.x, this.adsAmount) + sway + reloadOffsetX + carryOffsetX,
+      THREE.MathUtils.lerp(this.basePosition.x, this.adsPosition.x, this.adsAmount) + sway + reloadOffsetX + carryOffsetX + suppressorOffsetX,
       THREE.MathUtils.lerp(this.basePosition.y, this.adsPosition.y, this.adsAmount)
       + reloadOffsetY + bob + carryOffsetY,
       THREE.MathUtils.lerp(this.basePosition.z, this.adsPosition.z, this.adsAmount)
@@ -410,12 +479,12 @@ export class WeaponSystem {
     );
     this.weaponHolder.rotation.set(
       THREE.MathUtils.lerp(this.baseRotation.x, this.adsRotation.x, this.adsAmount)
-      - this.weaponKick * kickUpMultiplier * kickScale + reloadTiltX - lookSwayY * 0.003 + carryPitch,
-      THREE.MathUtils.lerp(this.baseRotation.y, this.adsRotation.y, this.adsAmount) + sway * 0.15 + runYaw + carryYaw,
+      - this.weaponKick * kickUpMultiplier * kickScale + reloadTiltX - lookSwayY * 0.003 + carryPitch + runPitch,
+      THREE.MathUtils.lerp(this.baseRotation.y, this.adsRotation.y, this.adsAmount) + sway * 0.15 + runYaw + carryYaw + suppressorYaw,
       THREE.MathUtils.lerp(this.baseRotation.z, this.adsRotation.z, this.adsAmount) + reloadTiltZ + runTilt,
     );
     this.weaponHolder.updateMatrixWorld(true);
-    if (this.input.wasPressed('KeyB') && this.displayName === 'M416') {
+    if (this.input.wasPressed('KeyB') && (this.displayName === 'M416' || this.displayName === 'SCAR')) {
       this.fireMode = this.fireMode === 'auto' ? 'single' : 'auto';
       this.audio.play('dry'); // small click sound
     }
@@ -431,10 +500,15 @@ export class WeaponSystem {
     this.flash.visible = this.flashTimer > 0;
     if (this.flash.visible) {
       this.flash.rotation.z = Math.random() * Math.PI;
-      const baseScale = this.displayName === 'Pistol' ? 0.35 : 0.78;
-      const variance = this.displayName === 'Pistol' ? 0.2 : 0.45;
+      let baseScale = this.displayName === 'Pistol' ? 0.35 : 0.78;
+      let variance = this.displayName === 'Pistol' ? 0.2 : 0.45;
+
+      if (this.suppressorEnabled) {
+        baseScale *= 0.15; // Drastically reduce muzzle flash when suppressed
+        variance *= 0.15;
+      }
+
       this.flash.scale.setScalar(baseScale + Math.random() * variance);
-    } else {
     }
   }
 
@@ -529,6 +603,36 @@ export class WeaponSystem {
     }
   }
 
+  toggleSuppressor() {
+    if (this.suppressorParts && this.suppressorParts.length > 0) {
+      this.suppressorEnabled = !this.suppressorEnabled;
+      for (const part of this.suppressorParts) {
+        part.visible = this.suppressorEnabled;
+      }
+
+      // Update muzzle position to be at the suppressor tip if enabled
+      const activePoint = (this.suppressorEnabled && this.suppressorPoint)
+        ? this.suppressorPoint
+        : this.weaponRig?.references?.muzzlePoint;
+
+      if (activePoint) {
+        this.model.updateWorldMatrix(true, true);
+        const position = activePoint.getWorldPosition(new THREE.Vector3());
+        this.model.worldToLocal(position);
+        this.muzzle.position.copy(position);
+        this.flash.position.copy(this.muzzle.position);
+      }
+
+      this.audio.play(this.suppressorEnabled ? 'dry' : 'dry'); // Provide some feedback, adjust if you have a specific sound
+    }
+  }
+
+  toggleAltView() {
+    this.altViewEnabled = !this.altViewEnabled;
+    this.targetBasePosition.copy(this.altViewEnabled ? this.altBasePosition : this.defaultBasePosition);
+    this.targetBaseRotation.copy(this.altViewEnabled ? this.altBaseRotation : this.defaultBaseRotation);
+  }
+
   tryFire() {
     if (this.reloading || this.fireCooldown > 0 || this.dryCooldown > 0) return;
     if (this.magazine <= 0) {
@@ -574,8 +678,8 @@ export class WeaponSystem {
       + (Math.random() - 0.5) * this.config.recoilYaw * 0.4;
     this.player.addRecoil(progressivePitch, recoilYaw);
     this.player.addShake(0.08 + this.shotCounter * 0.008);
-    if (this.displayName === 'M416') {
-      this.audio.play('m4_shot');
+    if (this.displayName === 'M416' || this.displayName === 'SCAR') {
+      this.audio.play(this.suppressorEnabled ? 'suppressed_shot' : 'm4_shot');
     } else if (this.displayName === 'Pistol') {
       this.audio.play('glock_shot');
     } else {
@@ -623,6 +727,10 @@ export class WeaponSystem {
   }
 
   getMuzzleSpawnPosition(target) {
+    if (this.suppressorEnabled && this.suppressorPoint) {
+      this.suppressorPoint.getWorldPosition(target);
+      return true;
+    }
     if (this.weaponRig?.getMuzzlePosition(target)) return true;
     if (this.modelAsset) return false;
     return target.copy(this.muzzle.getWorldPosition(new THREE.Vector3()));

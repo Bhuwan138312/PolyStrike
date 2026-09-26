@@ -689,6 +689,10 @@ button {
   height: 24px; /* Pistol - slightly smaller */
 }
 
+#weapon-outline-2 img {
+  height: 38px; /* AR-15 */
+}
+
 .weapon-icon.active {
   /* Vibrant white glow to signify selection */
   filter: drop-shadow(0 0 4px white) drop-shadow(0 0 10px rgba(255, 255, 255, 0.9));
@@ -702,6 +706,10 @@ button {
 
 #weapon-outline-1.active img {
   height: 38px;
+}
+
+#weapon-outline-2.active img {
+  height: 64px;
 }
 
 .hud-top-center {

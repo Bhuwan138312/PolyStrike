@@ -58,6 +58,14 @@ export class AudioManager {
     }
 
     try {
+      const responseSuppressed = await fetch('/sounds/supressed.mp3');
+      const arrayBufferSuppressed = await responseSuppressed.arrayBuffer();
+      this.suppressedBuffer = await this.context.decodeAudioData(arrayBufferSuppressed);
+    } catch (e) {
+      console.warn('Failed to load suppressed sound', e);
+    }
+
+    try {
       const responseGlock = await fetch('/sounds/GLOCKSOUND.mp3');
       const arrayBufferGlock = await responseGlock.arrayBuffer();
       this.glockBuffer = await this.context.decodeAudioData(arrayBufferGlock);
@@ -159,6 +167,7 @@ export class AudioManager {
       gunshot: () => this.gunshot(destination, now, 1, 130),
       m4_shot: () => this.m4_shot(destination, now, 1.2),
       glock_shot: () => this.glock_shot(destination, now, 1.1),
+      suppressed_shot: () => this.suppressed_shot(destination, now, 1.2),
       enemyShot: () => this.gunshot(destination, now, 0.62, 105),
       reload: () => this.reload(destination, now),
       reload_pistol: () => this.reload_pistol(destination, now),
@@ -270,70 +279,25 @@ export class AudioManager {
       return;
     }
 
-    // 1. The Main "Crack" (Broad spectrum noise)
-    const crackSource = this.context.createBufferSource();
-    crackSource.buffer = this.noiseBuffer;
+    this.gunshot(destination, now, strength * 0.8, 150);
+  }
 
-    const crackFilter = this.context.createBiquadFilter();
-    crackFilter.type = 'bandpass';
-    crackFilter.frequency.setValueAtTime(1500, now);
-    crackFilter.Q.setValueAtTime(0.5, now);
+  suppressed_shot(destination, now, strength) {
+    const pannerGainValue = pannerGain(destination);
 
-    const crackEnv = this.context.createGain();
-    crackEnv.gain.setValueAtTime(1.5 * strength * pannerGainValue, now);
-    crackEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    if (this.suppressedBuffer) {
+      const source = this.context.createBufferSource();
+      source.buffer = this.suppressedBuffer;
+      const gain = this.context.createGain();
+      // Reduced by 30% (from 1.2 to 0.84)
+      gain.gain.value = 0.50 * strength * pannerGainValue;
+      source.connect(gain).connect(destination);
+      source.start(now);
+      return;
+    }
 
-    crackSource.connect(crackFilter).connect(crackEnv).connect(destination);
-    crackSource.start(now, Math.random() * 0.3);
-    crackSource.stop(now + 0.15);
-
-    // 2. The High-Frequency "Snap" (Mechanical metallic sound)
-    const snapSource = this.context.createBufferSource();
-    snapSource.buffer = this.noiseBuffer;
-
-    const snapFilter = this.context.createBiquadFilter();
-    snapFilter.type = 'highpass';
-    snapFilter.frequency.setValueAtTime(3000, now);
-
-    const snapEnv = this.context.createGain();
-    snapEnv.gain.setValueAtTime(1.0 * strength * pannerGainValue, now);
-    snapEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-
-    snapSource.connect(snapFilter).connect(snapEnv).connect(destination);
-    snapSource.start(now, Math.random() * 0.3);
-    snapSource.stop(now + 0.06);
-
-    // 3. The Cinematic "Thump" (Massive Sub-Bass)
-    const thumpOsc = this.context.createOscillator();
-    thumpOsc.type = 'sine'; // Smooth bass
-
-    const thumpEnv = this.context.createGain();
-    thumpOsc.frequency.setValueAtTime(180, now);
-    thumpOsc.frequency.exponentialRampToValueAtTime(30, now + 0.12); // Sweeps down fast
-
-    thumpEnv.gain.setValueAtTime(1.5 * strength * pannerGainValue, now); // Very loud bass
-    thumpEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-
-    thumpOsc.connect(thumpEnv).connect(destination);
-    thumpOsc.start(now);
-    thumpOsc.stop(now + 0.16);
-
-    // 4. The "Tail" (Simulated environmental reverb/echo)
-    const tailSource = this.context.createBufferSource();
-    tailSource.buffer = this.noiseBuffer;
-
-    const tailFilter = this.context.createBiquadFilter();
-    tailFilter.type = 'lowpass';
-    tailFilter.frequency.setValueAtTime(1200, now);
-    tailFilter.frequency.linearRampToValueAtTime(100, now + 0.35);
-
-    const tailEnv = this.context.createGain();
-    tailEnv.gain.setValueAtTime(0.4 * strength * pannerGainValue, now);
-    tailEnv.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-
-    tailSource.connect(tailFilter).connect(tailEnv).connect(destination);
-    tailSource.start(now, Math.random() * 0.3);
-    tailSource.stop(now + 0.45);
+    // Fallback if audio file fails to load
+    this.gunshot(destination, now, strength * 0.4, 250);
   }
 
   glock_shot(destination, now, strength) {

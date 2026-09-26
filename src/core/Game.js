@@ -82,14 +82,16 @@ export class Game {
 
     this.primaryWeapon = new WeaponSystem({
       scene: this.scene, camera: this.camera, player: this.player, arena: this.arena, effects: this.effects, audio: this.audio,
-      config: GAME_CONFIG.weapon, modelUrl: '/models/m416rifle.glb', displayName: 'M416', targetLength: 1.25, viewScale: 1.3,
+      config: GAME_CONFIG.weapon, modelUrl: '/models/m416rifle.glb', displayName: 'M416', targetLength: 1.15, viewScale: 1.15,
+      basePosition: new THREE.Vector3(0.20, -0.37, -0.35), // Pulled back toward the player, lowered, and slightly left
+      modelOffset: new THREE.Vector3(0, 0, 0), // Reset offset so it doesn't stick out forward
       callbacks: createWeaponCallbacks(() => this.primaryWeapon),
     });
 
     this.secondaryWeapon = new WeaponSystem({
       scene: this.scene, camera: this.camera, player: this.player, arena: this.arena, effects: this.effects, audio: this.audio,
       config: GAME_CONFIG.secondaryWeapon, modelUrl: '/models/Pistol.glb', displayName: 'Pistol', targetLength: 0.42, viewScale: 1.0,
-      basePosition: new THREE.Vector3(0.24, -0.24, -0.50), // Moved right and down for less dominant idle view
+      basePosition: new THREE.Vector3(0.18, -0.37, -0.35), // Same placement as M4
       callbacks: createWeaponCallbacks(() => this.secondaryWeapon),
     });
 
@@ -102,8 +104,18 @@ export class Game {
 
     this.input.onDigit1 = () => this.switchWeapon(0);
     this.input.onDigit2 = () => this.switchWeapon(1);
-    this.input.onScrollUp = () => this.switchWeapon(this.activeWeaponIndex === 0 ? 1 : 0);
-    this.input.onScrollDown = () => this.switchWeapon(this.activeWeaponIndex === 0 ? 1 : 0);
+    this.input.onKeyE = () => {
+      if (this.activeWeapon?.toggleSuppressor) {
+        this.activeWeapon.toggleSuppressor();
+      }
+    };
+    this.input.onKeyQ = () => {
+      if (this.activeWeapon?.toggleAltView) {
+        this.activeWeapon.toggleAltView();
+      }
+    };
+    this.input.onScrollUp = () => this.switchWeapon((this.activeWeaponIndex + 1) % this.weapons.length);
+    this.input.onScrollDown = () => this.switchWeapon((this.activeWeaponIndex - 1 + this.weapons.length) % this.weapons.length);
 
     // Weapon switch animation state
     this.weaponSwitching = false;
@@ -206,7 +218,7 @@ export class Game {
     this.ui.setHealth(this.player.health.current, this.player.health.maxHealth);
     this.ui.setAmmo(this.activeWeapon.magazine, this.activeWeapon.reserve, false, 0, this.activeWeapon.config);
     this.ui.setEnemies(this.spawner.getAlive());
-    this.ui.setActiveWeaponIcon(this.activeWeaponIndex);
+    this.ui.setActiveWeaponIcon(this.activeWeaponIndex, this.activeWeapon.displayName);
     this.ui.showHud();
     this.state = 'PLAYING';
     this.input.clear();
@@ -245,7 +257,7 @@ export class Game {
         this.player.weapon = this.activeWeapon;
         this.activeWeapon.model.visible = true;
         this.ui.setAmmo(this.activeWeapon.magazine, this.activeWeapon.reserve, this.activeWeapon.reloading, this.activeWeapon.reloadElapsed, this.activeWeapon.config);
-        this.ui.setActiveWeaponIcon(this.activeWeaponIndex);
+        this.ui.setActiveWeaponIcon(this.activeWeaponIndex, this.activeWeapon.displayName);
 
         this.switchPhase = 'up';
         this.switchElapsed = 0;
@@ -477,7 +489,7 @@ export class Game {
   }
 
   applyGraphicsQuality(quality) {
-    switch(quality) {
+    switch (quality) {
       case 'low':
         this.renderer.setPixelRatio(0.75);
         this.renderer.shadowMap.enabled = false;
@@ -498,7 +510,7 @@ export class Game {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         break;
     }
-    
+
     this.scene.traverse((child) => {
       if (child.isMesh && child.material) {
         if (Array.isArray(child.material)) {
@@ -515,7 +527,7 @@ export class Game {
       const rawDelta = this.clock.getDelta();
       const delta = Math.min(rawDelta, 0.04);
       this.elapsed += delta;
-      
+
       if (this.state === 'MENU' || this.state === 'QUIT') this.updateMenuCamera(delta);
       if (this.state === 'PLAYING') this.updateMatch(delta);
 

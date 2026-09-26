@@ -5,14 +5,14 @@ const WORLD_DOWN = new THREE.Vector3(0, -1, 0);
 
 const REFERENCE_DEFINITIONS = Object.freeze([
   { key: 'gunBody', expected: 'GunBody', candidates: ['GunBody'] },
-  { key: 'muzzlePoint', expected: 'MuzzlePoint', candidates: ['MuzzlePoint', 'muzzlepoint', 'Muzzlepoint'] },
+  { key: 'muzzlePoint', expected: 'MuzzlePoint', candidates: ['MuzzlePoint', 'muzzlepoint', 'Muzzlepoint', 'Muzzleoint'] },
   { key: 'shellEjectPoint', expected: 'ShellEjectPoint', candidates: ['ShellEjectPoint', 'Shellejectionpoint', 'shellejectionpoint', 'ShellEjectionPoint'] },
-  { key: 'bolt', expected: 'Bolt', candidates: ['Bolt', 'bolt', 'Cock', 'cock', 'slide', 'Slide'] },
+  { key: 'bolt', expected: 'Bolt', candidates: ['Bolt', 'bolt', 'Cock', 'cock', 'slide', 'Slide', 'Charging_Handle', 'Charginghandle'] },
   { key: 'trigger', expected: 'Trigger', candidates: ['Trigger', 'trigger'] },
   {
     key: 'magazine',
     expected: 'Magazine',
-    candidates: ['Magazine', '54539_ak12_30rnd_empty_mag_15', 'magazine'],
+    candidates: ['Magazine', '54539_ak12_30rnd_empty_mag_15', 'magazine', 'Magazine_30_Round_PMAG', 'Magazines'],
   },
   { key: 'scope', expected: 'Scope', candidates: ['Scope', 'Scope_mount', 'ddmk18_iron_sight_18'] },
   { key: 'scopeGlass', expected: 'ScopeGlass', candidates: ['ScopeGlass', 'scope_gglass'] },
@@ -24,10 +24,11 @@ const REFERENCE_DEFINITIONS = Object.freeze([
 ]);
 
 export class GLBWeaponRig {
-  constructor({ model, asset, mechanics }) {
+  constructor({ model, asset, mechanics, boltTravelOverride = null }) {
     this.model = model;
     this.asset = asset;
     this.config = mechanics;
+    this.boltTravelOverride = boltTravelOverride;
     this.references = {};
     this.referenceAudit = null;
     this.adsLocalPosition = null;
@@ -262,7 +263,7 @@ export class GLBWeaponRig {
       const backwardInParent = worldDirectionToParent(backwardInWorld, bolt.parent);
       this.boltTravelDirection.copy(backwardInParent).normalize();
       const scale = bolt.parent.getWorldScale(new THREE.Vector3()).x || 1;
-      this.boltLocalTravel = this.config.bolt.travel / scale;
+      this.boltLocalTravel = (this.boltTravelOverride !== undefined && this.boltTravelOverride !== null ? this.boltTravelOverride : this.config.bolt.travel) / scale;
     }
 
     if (trigger) {
