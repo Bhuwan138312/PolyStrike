@@ -82,8 +82,8 @@ export class Game {
 
     this.primaryWeapon = new WeaponSystem({
       scene: this.scene, camera: this.camera, player: this.player, arena: this.arena, effects: this.effects, audio: this.audio,
-      config: GAME_CONFIG.weapon, modelUrl: '/models/m416rifle.glb', displayName: 'M416', targetLength: 1.15, viewScale: 1.15,
-      basePosition: new THREE.Vector3(0.20, -0.37, -0.35), // Pulled back toward the player, lowered, and slightly left
+      config: GAME_CONFIG.weapon, modelUrl: '/models/m416rifle.glb?v=3', displayName: 'M416', targetLength: 1.15, viewScale: 1.15,
+      basePosition: new THREE.Vector3(0.18, -0.37, -0.35), // Same placement as before
       modelOffset: new THREE.Vector3(0, 0, 0), // Reset offset so it doesn't stick out forward
       callbacks: createWeaponCallbacks(() => this.primaryWeapon),
     });

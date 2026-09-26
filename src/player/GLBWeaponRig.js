@@ -7,7 +7,8 @@ const REFERENCE_DEFINITIONS = Object.freeze([
   { key: 'gunBody', expected: 'GunBody', candidates: ['GunBody'] },
   { key: 'muzzlePoint', expected: 'MuzzlePoint', candidates: ['MuzzlePoint', 'muzzlepoint', 'Muzzlepoint', 'Muzzleoint'] },
   { key: 'shellEjectPoint', expected: 'ShellEjectPoint', candidates: ['ShellEjectPoint', 'Shellejectionpoint', 'shellejectionpoint', 'ShellEjectionPoint'] },
-  { key: 'bolt', expected: 'Bolt', candidates: ['Bolt', 'bolt', 'Cock', 'cock', 'slide', 'Slide', 'Charging_Handle', 'Charginghandle'] },
+  { key: 'bolt', expected: 'Bolt', candidates: ['Bolt', 'bolt', 'Cock', 'cock', 'slide', 'Slide', 'uar15 bolt'] },
+  { key: 'chargingHandle', expected: 'ChargingHandle', candidates: ['Charging_Handle', 'Charginghandle', 'charginghandle'] },
   { key: 'trigger', expected: 'Trigger', candidates: ['Trigger', 'trigger'] },
   {
     key: 'magazine',
@@ -49,6 +50,7 @@ export class GLBWeaponRig {
     this.triggerBasePosition = null;
     this.triggerTravelDirection = new THREE.Vector3();
     this.triggerLocalTravel = 0;
+    this.chargingHandleBasePosition = null;
 
     this.currentMagazine = null;
     this.baseMagazine = null;
@@ -179,10 +181,10 @@ export class GLBWeaponRig {
     const material = redDot.material;
     if (!material || Array.isArray(material)) return;
     const dotMaterial = material.clone();
-    dotMaterial.color?.setHex(0xff3048);
+    dotMaterial.color?.setHex(0xff0000); // Pure red
     if ('emissive' in dotMaterial) {
-      dotMaterial.emissive.setHex(0x5a0714);
-      dotMaterial.emissiveIntensity = 1.25;
+      dotMaterial.emissive.setHex(0xff0000); // Pure bright red glow
+      dotMaterial.emissiveIntensity = 4.0; // High intensity for bloom/brightness
     }
     dotMaterial.toneMapped = false;
     redDot.material = dotMaterial;
@@ -264,6 +266,16 @@ export class GLBWeaponRig {
       this.boltTravelDirection.copy(backwardInParent).normalize();
       const scale = bolt.parent.getWorldScale(new THREE.Vector3()).x || 1;
       this.boltLocalTravel = (this.boltTravelOverride !== undefined && this.boltTravelOverride !== null ? this.boltTravelOverride : this.config.bolt.travel) / scale;
+    }
+
+    const { chargingHandle } = this.references;
+    if (chargingHandle) {
+      this.chargingHandleBasePosition = chargingHandle.position.clone();
+      const backwardInWorld = this.muzzleDirection.clone().negate();
+      const backwardInParent = worldDirectionToParent(backwardInWorld, chargingHandle.parent);
+      this.chargingHandleTravelDirection = backwardInParent.normalize();
+      const scale = chargingHandle.parent.getWorldScale(new THREE.Vector3()).x || 1;
+      this.chargingHandleLocalTravel = (this.boltTravelOverride !== undefined && this.boltTravelOverride !== null ? this.boltTravelOverride : this.config.bolt.travel) / scale;
     }
 
     if (trigger) {
@@ -415,16 +427,25 @@ export class GLBWeaponRig {
   }
 
   updateReloadBolt(phase) {
-    const bolt = this.references.bolt;
-    if (!bolt || !this.boltBasePosition) return;
     const clamped = THREE.MathUtils.clamp(phase, 0, 1);
     const amount = clamped < 0.45
       ? easeOutCubic(clamped / 0.45)
       : 1 - smoothstep((clamped - 0.45) / 0.55);
-    bolt.position.copy(this.boltBasePosition)
-      .addScaledVector(this.boltTravelDirection, this.boltLocalTravel * amount);
+
+    const bolt = this.references.bolt;
+    if (bolt && this.boltBasePosition) {
+      bolt.position.copy(this.boltBasePosition)
+        .addScaledVector(this.boltTravelDirection, this.boltLocalTravel * amount);
+      if (clamped >= 1) bolt.position.copy(this.boltBasePosition);
+    }
     this.reloadBoltActive = clamped < 1;
-    if (clamped >= 1) bolt.position.copy(this.boltBasePosition);
+
+    const ch = this.references.chargingHandle;
+    if (ch && this.chargingHandleBasePosition) {
+      ch.position.copy(this.chargingHandleBasePosition)
+        .addScaledVector(this.chargingHandleTravelDirection, this.chargingHandleLocalTravel * amount);
+      if (clamped >= 1) ch.position.copy(this.chargingHandleBasePosition);
+    }
   }
 
   animateMagazine(object, fromPosition, toPosition, fromQuaternion, toQuaternion, phase) {

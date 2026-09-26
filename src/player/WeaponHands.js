@@ -36,13 +36,14 @@ export class WeaponHands {
         ? this.anchorPoint(supportAnchor)
         : (this.isPistol
           ? new THREE.Vector3(-0.015, -0.05, 0.12) // Perfectly symmetrical to right hand
-          : new THREE.Vector3(-0.03, -0.02, -0.15)));
+          : new THREE.Vector3(0.0, 0.10, -0.20)));
 
-    if (this.handAnchors?.support) {
+    if (this.handAnchors?.support || supportAnchor) {
       // Undo the generic support drop/inboard so the given value is where the
       // fist itself ends up rather than where its anchor sits.
       supportPosition.x += 0.04;
       supportPosition.y += 0.11;
+      supportPosition.z -= 0.08; // Push hand further forward along the handguard
     }
 
     this.group = new THREE.Group();
@@ -73,8 +74,8 @@ export class WeaponHands {
     const offscreenPos = new THREE.Vector3(-0.1, -0.6, 0.2);
     const insertStartPos = new THREE.Vector3(0.02, -0.5, 0.05);
 
-    const cockPos = new THREE.Vector3(-0.04, 0.06, 0.0);
-    const cockPulledPos = new THREE.Vector3(-0.04, 0.06, 0.15);
+    const cockPos = new THREE.Vector3(-0.04, 0.06, 0.20);
+    const cockPulledPos = new THREE.Vector3(-0.04, 0.06, 0.35);
     const cockRot = new THREE.Euler(0.5, 0.2, -0.2);
 
     const lerpTransform = (p1, p2, r1, r2, t) => {
@@ -87,30 +88,38 @@ export class WeaponHands {
     const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
     const easeInOutQuad = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
-    if (progress < 0.15) {
+    if (progress < 0.10) {
       // 1. Move from barrel to mag smoothly
-      const t = easeInOutQuad(progress / 0.15);
+      const t = easeInOutQuad(progress / 0.10);
       lerpTransform(this.leftHandBasePos, magPos, this.leftHandBaseRot, magRot, t);
-    } else if (progress < 0.25) {
+    } else if (progress < 0.20) {
       // 2. Pull mag and throw
-      const t = easeOutCubic((progress - 0.15) / 0.10);
+      const t = easeOutCubic((progress - 0.10) / 0.10);
       lerpTransform(magPos, throwPos, magRot, throwRot, t);
-    } else if (progress < 0.45) {
+    } else if (progress < 0.35) {
       // 3. Drop hand offscreen
-      const t = (progress - 0.25) / 0.20;
+      const t = (progress - 0.20) / 0.15;
       lerpTransform(throwPos, offscreenPos, throwRot, throwRot, Math.min(1, t * 1.5));
-    } else if (progress < 0.55) {
+    } else if (progress < 0.45) {
       // 4. Move up with new mag
-      const t = easeOutCubic((progress - 0.45) / 0.10);
+      const t = easeOutCubic((progress - 0.35) / 0.10);
       lerpTransform(offscreenPos, insertStartPos, throwRot, magRot, t);
-    } else if (progress < 0.85) {
+    } else if (progress < 0.65) {
       // 5. Insert mag
-      const t = easeInOutQuad((progress - 0.55) / 0.30);
+      const t = easeInOutQuad((progress - 0.45) / 0.20);
       lerpTransform(insertStartPos, magPos, magRot, magRot, t);
+    } else if (progress < 0.80) {
+      // 6. Move hand from mag to charging handle (Doubled reach time)
+      const t = easeInOutQuad((progress - 0.65) / 0.15);
+      lerpTransform(magPos, cockPos, magRot, cockRot, t);
+    } else if (progress < 0.89) {
+      // 7. Pull charging handle back (Much slower)
+      const t = easeInOutQuad((progress - 0.80) / 0.09);
+      lerpTransform(cockPos, cockPulledPos, cockRot, cockRot, t);
     } else {
-      // 6. Return to barrel smoothly
-      const t = easeInOutQuad((progress - 0.85) / 0.15);
-      lerpTransform(magPos, this.leftHandBasePos, magRot, this.leftHandBaseRot, t);
+      // 8. Release charging handle and return to barrel smoothly
+      const t = easeInOutQuad((progress - 0.89) / 0.11);
+      lerpTransform(cockPulledPos, this.leftHandBasePos, cockRot, this.leftHandBaseRot, t);
     }
   }
 

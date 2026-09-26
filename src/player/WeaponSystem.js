@@ -49,7 +49,7 @@ export class WeaponSystem {
     this.adsPosition = new THREE.Vector3(0, -0.19, -0.42);
     this.baseRotation = new THREE.Euler(0.0, 0.0, 0.0);
     this.defaultBaseRotation = this.baseRotation.clone();
-    this.altBaseRotation = new THREE.Euler(0.0, 0.0, 0.0);
+    this.altBaseRotation = new THREE.Euler(0.0, -0.06, 0.0); // Compensate for 3D perspective distortion so it looks straight
     this.targetBaseRotation = this.baseRotation.clone();
     this.adsRotation = new THREE.Euler(0.0, 0, 0);
     this.aimRaycaster = new THREE.Raycaster();
